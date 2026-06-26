@@ -1,0 +1,2303 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Material Control SDE</title>
+    
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <!-- React & Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; font-size: 13px; }
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .table-input { background: transparent; text-align: center; width: 100%; outline: none; border-bottom: 1px dashed transparent; transition: all 0.2s; font-size: 11px; padding: 0; margin: 0; height: 16px; }
+        .table-input:focus { background: white; border-bottom: 1px solid #3b82f6; color: #1e3a8a; }
+        .table-input-date { font-size: 0.55rem; color: #64748b; margin-top: 1px; display: block; width: 100%; text-align: center; background: transparent; padding: 0; border: none; letter-spacing: -0.5px; height: 14px; outline: none; }
+        .table-input-date::-webkit-calendar-picker-indicator { transform: scale(0.7); margin-left: -4px; cursor: pointer; padding: 0; }
+        .table-input-ref { font-size: 0.55rem; color: #475569; font-weight: 600; margin-top: 1px; display: block; width: 100%; text-align: center; background: transparent; text-transform: uppercase; padding: 0; border: none; height: 14px; outline: none; }
+        .detail-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 1px 0; overflow: hidden; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        // --- UTILS & CORE EXPORTS ---
+        const loadXLSX = (callback) => {
+            if (window.XLSX) { if (callback) callback(); return; }
+            const script = document.createElement('script');
+            script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
+            script.onload = () => { if (callback) callback(); };
+            document.head.appendChild(script);
+        };
+
+        const exportToExcel = (data, filename, sheetName = "Sheet1") => {
+            if (window.XLSX) {
+                const ws = window.XLSX.utils.json_to_sheet(data);
+                const wb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+                window.XLSX.writeFile(wb, `${filename}.xlsx`);
+            } else {
+                alert("Excel Library loading... Please wait.");
+                loadXLSX();
+            }
+        };
+
+        const shareToLine = (title, textContent) => {
+            let message = `📋 สรุปข้อมูล: ${title}\n📅 วันที่: ${new Date().toLocaleDateString('th-TH')}\n----------------\n${textContent}`;
+            if (message.length > 2500) message = message.substring(0, 2500) + '\n\n... (ข้อมูลยาวเกินไป กรุณาดูในระบบเพิ่มเติม)';
+            window.open(`https://line.me/R/msg/text/?${encodeURIComponent(message)}`, '_blank');
+        };
+
+        // --- ICONS ---
+        const Icon = ({ children, className="", size=18 }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
+        const Icons = {
+            Menu: (p) => <Icon {...p}><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></Icon>,
+            Truck: (p) => <Icon {...p}><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></Icon>,
+            ShoppingCart: (p) => <Icon {...p}><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></Icon>,
+            FileText: (p) => <Icon {...p}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></Icon>,
+            LayoutDashboard: (p) => <Icon {...p}><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></Icon>,
+            Target: (p) => <Icon {...p}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></Icon>,
+            Database: (p) => <Icon {...p}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></Icon>,
+            Tag: (p) => <Icon {...p}><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><circle cx="7" cy="7" r="3"/></Icon>,
+            Ruler: (p) => <Icon {...p}><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 2.9 5.8 5.8"/><path d="m9.5 7.9 2.5 2.5"/><path d="m4.6 12.8 2.5 2.5"/></Icon>,
+            Users: (p) => <Icon {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Icon>,
+            Store: (p) => <Icon {...p}><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"/></Icon>,
+            Building: (p) => <Icon {...p}><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></Icon>,
+            Settings: (p) => <Icon {...p}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></Icon>,
+            Edit3: (p) => <Icon {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Icon>,
+            Trash2: (p) => <Icon {...p}><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></Icon>,
+            X: (p) => <Icon {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></Icon>,
+            Search: (p) => <Icon {...p}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></Icon>,
+            FileSpreadsheet: (p) => <Icon {...p}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></Icon>,
+            Download: (p) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Icon>,
+            Upload: (p) => <Icon {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></Icon>,
+            Save: (p) => <Icon {...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></Icon>,
+            Calendar: (p) => <Icon {...p}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></Icon>,
+            ChevronLeft: (p) => <Icon {...p}><polyline points="15 18 9 12 15 6" /></Icon>,
+            ChevronRight: (p) => <Icon {...p}><polyline points="9 18 15 12 9 6" /></Icon>,
+            Eye: (p) => <Icon {...p}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></Icon>,
+            ClipboardList: (p) => <Icon {...p}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></Icon>,
+            Book: (p) => <Icon {...p}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></Icon>,
+            RefreshCw: (p) => <Icon {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></Icon>,
+            MessageCircle: (p) => <Icon {...p}><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></Icon>
+        };
+
+        // --- CONSTANTS & HELPERS ---
+        const STORAGE_KEY = 'project_planner_db_v85_edit_receiving'; 
+        
+        const ROLE_REQUESTOR = "ผู้เบิก (Requestor)";
+        const ROLE_INSPECTOR = "ผู้ตรวจ (Inspector)";
+        const ROLE_APPROVER = "ผู้อนุมัติ (Approver)";
+        const ROLE_DISPENSER = "ผู้จ่าย (Dispenser)";
+        
+        const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        const cleanString = (str) => str ? str.toString().trim().replace(/\s+/g, '').toLowerCase() : '';
+        const safeLower = (str) => str ? String(str).toLowerCase() : '';
+        const sumArrayQty = (arr) => arr ? arr.reduce((a, b) => a + Number(b.qty || 0), 0) : 0;
+        const isItemActive = (m) => (m.boq > 0 || sumArrayQty(m.ordered) > 0 || sumArrayQty(m.received) > 0 || sumArrayQty(m.disbursed) > 0);
+
+        const formatDate = (dateStr) => {
+            if (!dateStr) return '';
+            const parts = dateStr.split('-');
+            if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            return dateStr;
+        };
+
+        const parseSizeToNumber = (spec) => {
+            if (!spec) return null;
+            const match = String(spec).trim().match(/^(\d+(?:[-\s]\d+\/\d+)?|\d+\/\d+|\d+(?:\.\d+)?)/);
+            if (!match) return null;
+            let valStr = match[0].replace(/\s/g, '-');
+            if (valStr.includes('-') && valStr.includes('/')) {
+                const parts = valStr.split('-');
+                const fraction = parts[1].split('/');
+                return parseFloat(parts[0]) + (parseFloat(fraction[0]) / parseFloat(fraction[1]));
+            }
+            if (valStr.includes('/')) {
+                const parts = valStr.split('/');
+                return parseFloat(parts[0]) / parseFloat(parts[1]);
+            }
+            return parseFloat(valStr);
+        };
+
+        const sortMasterData = (data) => {
+            return [...data].sort((a, b) => {
+                const catComp = (a.category||'').localeCompare(b.category||'', 'th');
+                if (catComp !== 0) return catComp;
+                const nameComp = (a.name||'').localeCompare(b.name||'', 'th');
+                if (nameComp !== 0) return nameComp;
+                const numA = parseSizeToNumber(a.spec);
+                const numB = parseSizeToNumber(b.spec);
+                if (numA !== null && numB !== null && numA !== numB) return numA - numB;
+                return (a.spec||'').localeCompare(b.spec||'', 'th', { numeric: true });
+            });
+        };
+
+        const generateNextCode = (existingData, tempCodes = [], abbr = 'GN') => {
+          let maxId = 0;
+          const safeAbbr = abbr || 'GN';
+          const regex = new RegExp(`^${safeAbbr}-(\\d+)$`, 'i');
+          const process = (code) => {
+            if(!code) return;
+            const match = String(code).match(regex);
+            if (match) {
+              const num = parseInt(match[1], 10);
+              if (num > maxId) maxId = num;
+            }
+          };
+          existingData.forEach(item => process(item.code));
+          tempCodes.forEach(code => process(code));
+          return `${safeAbbr.toUpperCase()}-${String(maxId + 1).padStart(3, '0')}`;
+        };
+
+        // --- SHARED COMPONENTS ---
+        const SearchFilter = ({ searchTerm, setSearchTerm, searchField, setSearchField, placeholder, onSearchClick }) => (
+            <div className="flex flex-col sm:flex-row gap-2 items-center w-full">
+                <div className="flex bg-slate-100 rounded-lg p-1 gap-1 shrink-0 overflow-x-auto max-w-full border border-slate-200">
+                    {[{ id: 'all', label: 'All' }, { id: 'name', label: 'Name' }, { id: 'spec', label: 'Spec' }, { id: 'category', label: 'Cat' }, { id: 'code', label: 'Code' }].map(field => (
+                        <button key={field.id} onClick={() => setSearchField(field.id)} className={`px-3 py-1.5 text-xs rounded-md font-bold transition-all whitespace-nowrap flex items-center gap-1 ${searchField === field.id ? 'bg-white text-blue-600 shadow-sm border border-gray-100' : 'text-slate-500 hover:bg-slate-200'}`}>{field.label}</button>
+                    ))}
+                </div>
+                <div className="relative flex-1 w-full flex gap-2">
+                    <div className="relative w-full">
+                        <input className="w-full border border-slate-300 p-2 pl-9 pr-8 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder={placeholder} value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+                        <Icons.Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+                        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-red-500 transition-colors p-1"><Icons.X size={14} /></button>}
+                    </div>
+                    <button onClick={onSearchClick} className="bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg shadow-md transition-all flex items-center justify-center shrink-0 active:scale-95"><Icons.Search size={18} /></button>
+                </div>
+            </div>
+        );
+
+        const DateInput = ({ value, onChange, className }) => {
+            const [text, setText] = useState(formatDate(value));
+            useEffect(() => { setText(formatDate(value)); }, [value]);
+
+            const handleBlur = () => {
+                if(!text.trim()) { onChange(''); setText(''); return; }
+                const parts = text.split(/[-/]/);
+                if (parts.length === 3) {
+                    let d = parts[0].padStart(2, '0');
+                    let m = parts[1].padStart(2, '0');
+                    let yStr = parts[2];
+                    let yNum = parseInt(yStr, 10);
+                    let y;
+                    
+                    if (yStr.length === 2) {
+                        if (yNum > 50) y = (yNum + 2500 - 543).toString(); 
+                        else y = '20' + yStr; 
+                    } else if (yStr.length === 4) {
+                        if (yNum > 2500) y = (yNum - 543).toString(); 
+                        else y = yStr;
+                    }
+
+                    if (y && y.length === 4) {
+                        const iso = `${y}-${m}-${d}`;
+                        if (!isNaN(new Date(iso).getTime())) {
+                            onChange(iso);
+                            setText(`${d}/${m}/${y}`);
+                            return;
+                        }
+                    }
+                }
+                setText(formatDate(value));
+            };
+
+            return (
+                <div className={`relative w-full border p-2 rounded bg-white flex items-center h-[38px] ${className || ''}`}>
+                    <input 
+                        type="text" 
+                        value={text} 
+                        onChange={e => setText(e.target.value)} 
+                        onBlur={handleBlur}
+                        placeholder="วว/ดด/ปปปป"
+                        className="w-full h-full bg-transparent outline-none text-sm text-slate-700"
+                    />
+                    <div className="absolute right-0 w-10 h-full flex items-center justify-center cursor-pointer hover:bg-slate-50 rounded-r transition-colors">
+                        <Icons.Calendar className="w-4 h-4 text-blue-500 pointer-events-none" />
+                        <input 
+                            type="date" 
+                            value={value} 
+                            onChange={e => { onChange(e.target.value); setText(formatDate(e.target.value)); }} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            title="เลือกจากปฏิทิน"
+                        />
+                    </div>
+                </div>
+            );
+        };
+
+        const InlineDateInput = ({ value, onChange }) => {
+            const [text, setText] = useState(formatDate(value));
+            useEffect(() => { setText(formatDate(value)); }, [value]);
+
+            const handleBlur = () => {
+                if(!text.trim()) { onChange(''); setText(''); return; }
+                const parts = text.split(/[-/]/);
+                if (parts.length === 3) {
+                    let d = parts[0].padStart(2, '0'); let m = parts[1].padStart(2, '0'); let yStr = parts[2]; let yNum = parseInt(yStr, 10); let y;
+                    if (yStr.length === 2) { y = (yNum > 50) ? (yNum + 2500 - 543).toString() : '20' + yStr; } 
+                    else if (yStr.length === 4) { y = (yNum > 2500) ? (yNum - 543).toString() : yStr; }
+                    if (y && y.length === 4) {
+                        const iso = `${y}-${m}-${d}`;
+                        if (!isNaN(new Date(iso).getTime())) { onChange(iso); setText(`${d}/${m}/${y}`); return; }
+                    }
+                }
+                setText(formatDate(value));
+            };
+
+            return (
+                <div className="relative w-full h-[14px] flex items-center mt-1 group bg-white border border-transparent hover:border-blue-200 focus-within:border-blue-500 rounded transition-colors">
+                    <input type="text" value={text} onChange={e => setText(e.target.value)} onBlur={handleBlur} placeholder="DD/MM/YY" className="table-input-date flex-1 min-w-0 bg-transparent outline-none text-center" />
+                    <div className="w-[14px] h-full relative overflow-hidden flex-shrink-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Icons.Calendar size={10} className="text-blue-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input type="date" value={value} onChange={e => { onChange(e.target.value); setText(formatDate(e.target.value)); }} className="absolute inset-0 w-[300%] h-full opacity-0 cursor-pointer -ml-4" />
+                    </div>
+                </div>
+            );
+        };
+
+        // --- VIEWS ---
+        const MasterDataViewWrapper = ({ masterData, setMasterData, categoryList, setCategoryList, unitList, setUnitList, showAlert, showConfirm }) => {
+            const [form, setForm] = useState({ code: '', name: '', brand: '', spec: '', unit: unitList?.[0]?.name || 'Pcs', category: categoryList?.[0]?.name || 'General', boq: '' });
+            const [search, setSearch] = useState('');
+            const [searchField, setSearchField] = useState('all');
+            const [isEdit, setIsEdit] = useState(false);
+            const [editId, setEditId] = useState(null);
+            const [editFormData, setEditFormData] = useState({});
+            
+            useEffect(() => {
+                if (categoryList && categoryList.length > 0 && (!form.category || !categoryList.find(c => c.name === form.category))) {
+                    setForm(prev => ({ ...prev, category: categoryList[0].name }));
+                }
+                if (unitList && unitList.length > 0 && (!form.unit || !unitList.find(u => u.name === form.unit))) {
+                    setForm(prev => ({ ...prev, unit: unitList[0].name }));
+                }
+            }, [categoryList, unitList]);
+            
+            const saveItem = () => {
+                const notify = showAlert || window.alert;
+                if (!form.name) return notify("กรุณาระบุชื่อพัสดุ", "ข้อมูลไม่ครบถ้วน");
+                let code = form.code;
+                const catList = categoryList || [];
+                if(!code) {
+                    const catObj = catList.find(c => c.name === form.category);
+                    const abbr = catObj ? catObj.abbr : 'GN';
+                    code = generateNextCode(masterData, [], abbr);
+                }
+                const item = { ...form, code, id: isEdit ? editId : generateId(), boq: Number(form.boq)||0, ordered:[], received:[], disbursed:[] };
+                if(isEdit) { 
+                    setMasterData(prev=>prev.map(m=>m.id===editId?{...m, ...item, ordered:m.ordered, received:m.received, disbursed:m.disbursed}:m)); 
+                    setIsEdit(false); setEditId(null); 
+                    notify("อัปเดตข้อมูลสำเร็จ", "สำเร็จ");
+                } else { 
+                    setMasterData(prev=>[...prev, item]); 
+                    notify("เพิ่มรายการพัสดุใหม่สำเร็จ", "สำเร็จ");
+                }
+                setForm({ code:'', name:'', brand:'', spec:'', unit: unitList?.[0]?.name || 'Pcs', category: categoryList?.[0]?.name || 'General', boq:'' });
+            };
+
+            const editItem = (m) => { setForm(m); setIsEdit(true); setEditId(m.id); setEditFormData({...m}); };
+            const cancelEdit = () => { setIsEdit(false); setEditId(null); setEditFormData({}); };
+            const saveEdit = () => { const notify = showAlert || window.alert; setMasterData(prev => prev.map(m => m.id === editId ? { ...m, ...editFormData, boq: Number(editFormData.boq) } : m)); cancelEdit(); notify("อัปเดตข้อมูลสำเร็จ", "สำเร็จ"); };
+            const deleteItem = (id) => { 
+                if (showConfirm) { showConfirm("ต้องการลบรายการพัสดุนี้ใช่หรือไม่?", () => setMasterData(prev=>prev.filter(m=>m.id!==id))); } 
+                else { if(window.confirm("ต้องการลบรายการพัสดุนี้ใช่หรือไม่?")) setMasterData(prev=>prev.filter(m=>m.id!==id)); }
+            };
+            
+            const handleImport = (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                const notify = showAlert || window.alert;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                        if(window.XLSX) {
+                            const wb = window.XLSX.read(evt.target.result, {type:'binary'});
+                            let countNew = 0; let countSkipped = 0;
+                            let newM = [...masterData]; let tempCodes = [];
+                            let existingCat = new Set((categoryList||[]).map(c=>c.name)); 
+                            let existingUnit = new Set((unitList||[]).map(u=>u.name));
+                            let newCats = []; let newUnits = [];
+                            
+                            wb.SheetNames.forEach(sheetName => {
+                                const data = window.XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "" });
+                                let catName = sheetName;
+                                let sheetAbbr = catName.substring(0, 2).toUpperCase();
+                                let existingCatObj = (categoryList||[]).find(c => safeLower(c.name) === safeLower(catName)) || newCats.find(c => safeLower(c.name) === safeLower(catName));
+                                
+                                if (existingCatObj) { sheetAbbr = existingCatObj.abbr; } 
+                                else { existingCat.add(catName); newCats.push({id: `CAT-${Date.now()}-${Math.random()}`, name: catName, abbr: sheetAbbr}); }
+
+                                data.forEach(row => {
+                                    const keys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+                                    const name = keys['name'] || keys['definition name'] || keys['description'] || keys['ชื่อ'] || keys['รายการ'];
+                                    
+                                    if(!name || String(name).trim() === '') return;
+
+                                    let code = keys['code'] || keys['item code'] || keys['รหัส'];
+                                    let brand = keys['brand'] || keys['manufacturer'] || keys['ยี่ห้อ'] || '';
+                                    let spec = keys['spec/size'] || keys['spec'] || keys['specification'] || keys['ขนาด'] || '-';
+                                    let unit = keys['unit'] || keys['uom'] || keys['หน่วย'] || 'Pcs';
+                                    let boq = Number(keys['boq'] || keys['quantity'] || keys['จำนวน'] || 0);
+
+                                    const existingIdx = newM.findIndex(m => cleanString(m.name) === cleanString(name) && cleanString(m.spec) === cleanString(spec));
+                                    
+                                    if(existingIdx > -1) { countSkipped++; } 
+                                    else {
+                                        if (!code) { code = generateNextCode(newM, tempCodes, sheetAbbr); tempCodes.push(code); }
+                                        if(!existingUnit.has(unit)){ existingUnit.add(unit); newUnits.push({id: `UNIT-${Date.now()}-${Math.random()}`, name: unit}); }
+                                        newM.push({ id: generateId(), code, name, brand, spec, unit, category: catName, boq, ordered: [], received: [], disbursed: [] });
+                                        countNew++;
+                                    }
+                                });
+                            });
+                            setMasterData(newM);
+                            if(newCats.length > 0) setCategoryList(prev => [...(prev||[]), ...newCats]);
+                            if(newUnits.length > 0) setUnitList(prev => [...(prev||[]), ...newUnits]);
+                            notify(`นำเข้ารายการใหม่สำเร็จ ${countNew} รายการ\n(ข้ามรายการซ้ำ ${countSkipped} รายการ)`, "นำเข้าข้อมูลสำเร็จ");
+                            e.target.value = null;
+                        } else { notify("Excel Library is loading... please wait.", "ยังไม่พร้อมใช้งาน"); loadXLSX(); }
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            const downloadTemplate = () => {
+                 if (window.XLSX) {
+                     const wb = window.XLSX.utils.book_new(); 
+                     const ws1 = window.XLSX.utils.aoa_to_sheet([["Code", "Name", "Spec/Size", "Brand", "Unit", "BOQ"], ["", "เหล็กเส้นกลม SR24", "RB6 mm", "Tata", "เส้น", 1000]]);
+                     window.XLSX.utils.book_append_sheet(wb, ws1, "Structure");
+                     const ws2 = window.XLSX.utils.aoa_to_sheet([["Code", "Name", "Spec/Size", "Brand", "Unit", "BOQ"], ["", "สีน้ำอะคริลิค", "ถัง 18L", "TOA", "ถัง", 50]]);
+                     window.XLSX.utils.book_append_sheet(wb, ws2, "Architect");
+                     window.XLSX.writeFile(wb, "Master_Template_MultiSheet.xlsx");
+                 } else { 
+                    const notify = showAlert || window.alert;
+                    notify("Excel Library is loading... please wait.", "ยังไม่พร้อมใช้งาน"); loadXLSX(); 
+                 }
+            };
+            
+            const handleExport = () => {
+                const exportData = masterData.map(m=>({Code:m.code, Name:m.name, "Spec/Size":m.spec, Brand:m.brand, Unit:m.unit, Category:m.category, BOQ:m.boq}));
+                exportToExcel(exportData, "MasterData_Export", "MasterData");
+            };
+
+            const filteredData = sortMasterData(masterData.filter(m => {
+                const term = safeLower(search);
+                if (!term) return true;
+                if (searchField === 'all') return safeLower(m.name).includes(term) || safeLower(m.code).includes(term) || safeLower(m.spec).includes(term) || safeLower(m.category).includes(term);
+                return safeLower(m[searchField]).includes(term);
+            }));
+
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-lg mb-4 text-purple-700">📦 Master Data Management</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-7 gap-3 mb-4 items-end">
+                            <div className="md:col-span-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500">Name (ชื่อ)</label>
+                                <input className="w-full border p-2 rounded text-sm" placeholder="Name" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500">Category (หมวด)</label>
+                                <select className="w-full border p-2 rounded text-sm bg-white" value={form.category} onChange={e=>setForm({...form, category:e.target.value})}>
+                                    {(categoryList||[]).map(c=><option key={c.id} value={c.name}>{c.name} ({c.abbr})</option>)}
+                                </select>
+                            </div>
+                            <div><label className="text-[10px] uppercase font-bold text-slate-500">Brand (ยี่ห้อ)</label><input className="w-full border p-2 rounded text-sm" placeholder="Brand" value={form.brand} onChange={e=>setForm({...form, brand:e.target.value})} /></div>
+                            <div><label className="text-[10px] uppercase font-bold text-slate-500">Spec (ขนาด)</label><input className="w-full border p-2 rounded text-sm" placeholder="Spec/Size" value={form.spec} onChange={e=>setForm({...form, spec:e.target.value})} /></div>
+                            <div><label className="text-[10px] uppercase font-bold text-slate-500">Unit (หน่วย)</label><select className="w-full border p-2 rounded text-sm bg-white" value={form.unit} onChange={e=>setForm({...form, unit:e.target.value})}>{(unitList||[]).map(u=><option key={u.id} value={u.name}>{u.name}</option>)}</select></div>
+                            <div><label className="text-[10px] uppercase font-bold text-slate-500">BOQ</label><input className="w-full border p-2 rounded text-sm" type="number" placeholder="BOQ" value={form.boq} onChange={e=>setForm({...form, boq:e.target.value})} /></div>
+                        </div>
+                        <div className="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100">
+                             <div className="flex gap-2 items-center flex-1 max-w-sm">
+                                 <label className="text-[10px] uppercase font-bold text-slate-500 whitespace-nowrap">รหัสอ้างอิง (Code):</label>
+                                 <input className="w-full border p-1.5 rounded text-sm bg-white font-mono text-blue-600 font-bold" placeholder="ปล่อยว่างเพื่อสร้างอัตโนมัติ" value={form.code} onChange={e=>setForm({...form, code:e.target.value})} />
+                             </div>
+                            <div className="flex gap-2">
+                                {isEdit && <button onClick={cancelEdit} className="px-4 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">Cancel</button>}
+                                <button onClick={saveItem} className="px-6 py-2 bg-purple-600 text-white rounded font-bold text-sm shadow hover:bg-purple-700">{isEdit?'Update':'Add Item'}</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow overflow-hidden">
+                        <div className="p-3 border-b flex flex-col md:flex-row justify-between items-center bg-slate-50 gap-4">
+                            <div className="flex items-center gap-4">
+                                <span className="font-bold text-slate-600 whitespace-nowrap">Items ({filteredData.length})</span>
+                                <div className="flex flex-wrap gap-2">
+                                    <button onClick={downloadTemplate} className="bg-white border border-slate-300 px-3 py-1.5 rounded text-xs hover:bg-slate-100 flex items-center gap-1 shadow-sm"><Icons.FileSpreadsheet size={14}/> Template</button>
+                                    <label className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs cursor-pointer flex gap-1 items-center shadow-sm hover:bg-green-100"><Icons.Upload size={14}/> Import (Excel)<input type="file" hidden onChange={handleImport} accept=".xlsx,.csv"/></label>
+                                    <button onClick={handleExport} className="bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-purple-100"><Icons.Download size={14}/> Export</button>
+                                </div>
+                            </div>
+                            <SearchFilter searchTerm={search} setSearchTerm={setSearch} searchField={searchField} setSearchField={setSearchField} onSearchClick={()=>setSearch('')} placeholder="Search..." />
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-100 font-bold text-xs uppercase text-slate-600 border-b">
+                                    <tr><th className="p-3">Code</th><th className="p-3">Name</th><th className="p-3">Brand</th><th className="p-3">Spec/Size</th><th className="p-3">Unit</th><th className="p-3">Cat</th><th className="p-3 text-right">BOQ</th><th className="p-3 text-center">Action</th></tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {filteredData.map(m => (
+                                        <tr key={m.id} className="hover:bg-slate-50 transition-colors">
+                                            {isEdit && editId === m.id ? (
+                                                <>
+                                                    <td className="p-2"><input className="border w-full text-xs bg-slate-100" value={editFormData.code} disabled /></td>
+                                                    <td className="p-2"><input className="border w-full text-xs p-1" value={editFormData.name} onChange={e=>setEditFormData({...editFormData, name:e.target.value})} /></td>
+                                                    <td className="p-2"><input className="border w-full text-xs p-1" value={editFormData.brand} onChange={e=>setEditFormData({...editFormData, brand:e.target.value})} /></td>
+                                                    <td className="p-2"><input className="border w-full text-xs p-1" value={editFormData.spec} onChange={e=>setEditFormData({...editFormData, spec:e.target.value})} /></td>
+                                                    <td className="p-2"><select className="border w-full text-xs p-1 bg-white" value={editFormData.unit} onChange={e=>setEditFormData({...editFormData, unit:e.target.value})}>{(unitList||[]).map(u=><option key={u.id} value={u.name}>{u.name}</option>)}</select></td>
+                                                    <td className="p-2"><select className="border w-full text-xs p-1 bg-white" value={editFormData.category} onChange={e=>setEditFormData({...editFormData, category:e.target.value})}>{(categoryList||[]).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}</select></td>
+                                                    <td className="p-2"><input className="border w-full text-xs p-1 text-right" type="number" value={editFormData.boq} onChange={e=>setEditFormData({...editFormData, boq:e.target.value})} /></td>
+                                                    <td className="text-center flex gap-2 justify-center p-2"><button onClick={saveEdit} className="text-green-600 bg-green-50 p-1 rounded"><Icons.Save size={16}/></button><button onClick={cancelEdit} className="text-slate-400 bg-slate-100 p-1 rounded"><Icons.X size={16}/></button></td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td className="p-3 font-mono text-blue-600 text-xs">{m.code}</td>
+                                                    <td className="p-3 font-bold">{m.name}</td>
+                                                    <td className="p-3 text-slate-500">{m.brand || '-'}</td>
+                                                    <td className="p-3 text-slate-600">{m.spec}</td>
+                                                    <td className="p-3 text-slate-500">{m.unit}</td>
+                                                    <td className="p-3 text-xs"><span className="bg-slate-200 px-2 py-1 rounded-full text-slate-700">{m.category}</span></td>
+                                                    <td className="p-3 text-right font-bold text-slate-700">{m.boq}</td>
+                                                    <td className="p-3 text-center flex justify-center gap-2">
+                                                        <button onClick={()=>editItem(m)} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded"><Icons.Edit3 size={16}/></button>
+                                                        <button onClick={()=>deleteItem(m.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Icons.Trash2 size={16}/></button>
+                                                    </td>
+                                                </>
+                                            )}
+                                        </tr>
+                                    ))}
+                                    {filteredData.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-slate-400">No Data Found</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CategoryView = ({ categoryList, setCategoryList, showAlert, showConfirm }) => {
+            const [val, setVal] = useState('');
+            const [abbr, setAbbr] = useState('');
+
+            const handleExport = () => {
+                const exportData = categoryList.map(c => ({ "Category Name": c.name, "Abbreviation": c.abbr }));
+                exportToExcel(exportData, "CategoryList", "Categories");
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto bg-white p-6 rounded shadow border-t-4 border-purple-500">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-purple-700 flex items-center gap-2"><Icons.Tag size={20}/> Category Setup (หมวดหมู่)</h3>
+                        <button onClick={handleExport} className="bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-purple-100"><Icons.Download size={14}/> Export</button>
+                    </div>
+                    <div className="flex gap-2 mb-4 items-end">
+                        <div className="flex-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">ชื่อหมวดหมู่ (Category Name)</label>
+                            <input className="w-full border p-2 rounded mt-1" placeholder="เช่น Structure, Cleaning" value={val} onChange={e=>{
+                                setVal(e.target.value);
+                                if(!abbr && e.target.value.length >= 2) {
+                                    setAbbr(e.target.value.substring(0, 2).toUpperCase());
+                                }
+                            }}/>
+                        </div>
+                        <div className="w-32">
+                            <label className="text-xs font-bold text-slate-500 uppercase">ตัวย่อ (Abbr)</label>
+                            <input className="w-full border p-2 rounded mt-1 uppercase" placeholder="เช่น ST, CL" value={abbr} onChange={e=>setAbbr(e.target.value.toUpperCase())} maxLength={3} />
+                        </div>
+                        <button onClick={()=>{
+                            if(val && abbr){
+                                setCategoryList([...(categoryList||[]), {id:Date.now(), name:val, abbr:abbr}]);
+                                setVal(''); setAbbr('');
+                                if(showAlert) showAlert("เพิ่มหมวดหมู่สำเร็จ", "สำเร็จ");
+                            } else {
+                                if(showAlert) showAlert("กรุณากรอกชื่อหมวดหมู่และตัวย่อให้ครบถ้วน", "ข้อมูลไม่ครบถ้วน");
+                            }
+                        }} className="bg-purple-600 text-white px-6 py-2 rounded font-bold shadow h-[42px] hover:bg-purple-700">Add</button>
+                    </div>
+                    <ul className="divide-y border-t mt-4">
+                        {(categoryList||[]).map(c=>(
+                            <li key={c.id} className="py-3 flex justify-between items-center hover:bg-slate-50 px-2 rounded">
+                                <span className="font-medium text-slate-700">{c.name} <span className="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded ml-2 font-bold">{c.abbr}</span></span>
+                                <button className="text-red-500 p-1 hover:bg-red-50 rounded" onClick={()=>{
+                                    if(showConfirm) showConfirm('ต้องการลบหมวดหมู่นี้ใช่หรือไม่?', () => setCategoryList((categoryList||[]).filter(x=>x.id!==c.id)));
+                                    else if(window.confirm('Delete?')) setCategoryList((categoryList||[]).filter(x=>x.id!==c.id));
+                                }}><Icons.Trash2 size={16}/></button>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            );
+        };
+
+        const UnitView = ({ unitList, setUnitList, showAlert, showConfirm }) => {
+            const [val, setVal] = useState('');
+            const notify = showAlert || window.alert;
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    if (window.XLSX) {
+                        const wb = window.XLSX.read(evt.target.result, {type: 'binary'});
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const data = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                        let newUnits = [...(unitList||[])];
+                        let count = 0;
+                        const existingNames = new Set(newUnits.map(u => safeLower(u.name)));
+                        data.forEach(row => {
+                            const keys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+                            const name = keys['name'] || keys['unit name'] || keys['ชื่อหน่วย'] || keys['หน่วย'] || keys['ชื่อ'] || keys['unit'];
+                            if(name && String(name).trim() !== '' && !existingNames.has(safeLower(name))) {
+                                newUnits.push({id: `UNIT-${Date.now()}-${Math.random()}`, name: String(name).trim()});
+                                existingNames.add(safeLower(name));
+                                count++;
+                            }
+                        });
+                        setUnitList(newUnits);
+                        notify(`นำเข้าหน่วยนับสำเร็จ ${count} รายการ`, "สำเร็จ");
+                        e.target.value = null;
+                    } else { notify("Excel Library not loaded.", "ข้อผิดพลาด"); loadXLSX(); }
+                };
+                reader.readAsBinaryString(file);
+            };
+            const downloadTemplate = () => {
+                if (window.XLSX) {
+                    const wb = window.XLSX.utils.book_new(); 
+                    const ws = window.XLSX.utils.aoa_to_sheet([["Unit Name"], ["Pcs"], ["Kg"], ["Meters"]]);
+                    window.XLSX.utils.book_append_sheet(wb, ws, "Units");
+                    window.XLSX.writeFile(wb, "Unit_Template.xlsx");
+                } else { notify("Excel Library loading...", "รอสักครู่"); loadXLSX(); }
+            };
+            
+            const handleExport = () => {
+                const exportData = unitList.map(u => ({ "Unit Name": u.name }));
+                exportToExcel(exportData, "UnitList", "Units");
+            };
+
+            return (
+                <div className="max-w-xl mx-auto bg-white p-6 rounded shadow border-t-4 border-blue-500">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-blue-700 flex gap-2 items-center"><Icons.Ruler size={20}/> Unit Setup</h3>
+                        <div className="flex gap-2">
+                            <button onClick={downloadTemplate} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded text-xs hover:bg-slate-200 flex items-center gap-1 shadow-sm"><Icons.FileSpreadsheet size={14}/> Template</button>
+                            <label className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs cursor-pointer flex gap-1 items-center shadow-sm hover:bg-green-100"><Icons.Upload size={14}/> Import<input type="file" hidden onChange={handleImport} accept=".xlsx,.csv"/></label>
+                            <button onClick={handleExport} className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-blue-100"><Icons.Download size={14}/> Export</button>
+                        </div>
+                    </div>
+                    <div className="flex gap-2 mb-4">
+                        <input className="border p-2 flex-1 rounded" placeholder="New Unit" value={val} onChange={e=>setVal(e.target.value)} />
+                        <button onClick={()=>{if(val){setUnitList([...(unitList||[]), {id:Date.now(), name:val}]); setVal(''); notify("เพิ่มหน่วยสำเร็จ","สำเร็จ");} else { notify("กรุณาระบุชื่อหน่วย","ข้อผิดพลาด"); }}} className="bg-blue-600 text-white px-6 font-bold rounded shadow-sm hover:bg-blue-700">Add</button>
+                    </div>
+                    <ul className="divide-y border-t mt-4">{(unitList||[]).map(c=><li key={c.id} className="py-3 px-2 flex justify-between hover:bg-slate-50 rounded"><span className="font-medium">{c.name}</span><button className="text-red-500 hover:bg-red-50 p-1.5 rounded" onClick={()=>{
+                        if(showConfirm){ showConfirm('ต้องการลบหน่วยนี้ใช่หรือไม่?', () => setUnitList((unitList||[]).filter(x=>x.id!==c.id))); } else { if(window.confirm('Delete?')) setUnitList((unitList||[]).filter(x=>x.id!==c.id)); }
+                    }}><Icons.Trash2 size={16}/></button></li>)}</ul>
+                </div>
+            );
+        };
+
+        const VendorView = ({ vendors, setVendors, showAlert, showConfirm }) => {
+            const [val, setVal] = useState('');
+            const notify = showAlert || window.alert;
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    if (window.XLSX) {
+                        const wb = window.XLSX.read(evt.target.result, {type: 'binary'});
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const data = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                        let newVendors = [...(vendors||[])];
+                        let count = 0;
+                        const existingNames = new Set(newVendors.map(u => safeLower(u.name)));
+                        data.forEach(row => {
+                            const keys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+                            const name = keys['vendor name'] || keys['name'] || keys['ชื่อร้านค้า'] || keys['ชื่อผู้จำหน่าย'] || keys['ชื่อ'] || keys['vendor'];
+                            if(name && String(name).trim() !== '' && !existingNames.has(safeLower(name))) {
+                                newVendors.push({id: `VEND-${Date.now()}-${Math.random()}`, name: String(name).trim()});
+                                existingNames.add(safeLower(name));
+                                count++;
+                            }
+                        });
+                        setVendors(newVendors);
+                        notify(`นำเข้าร้านค้าสำเร็จ ${count} รายการ`, "สำเร็จ");
+                        e.target.value = null;
+                    } else { notify("Excel Library not loaded.", "ข้อผิดพลาด"); loadXLSX(); }
+                };
+                reader.readAsBinaryString(file);
+            };
+            const downloadTemplate = () => {
+                if (window.XLSX) {
+                    const wb = window.XLSX.utils.book_new(); 
+                    const ws = window.XLSX.utils.aoa_to_sheet([["Vendor Name"], ["Global Steel Co., Ltd."], ["Thai Cement Public Company"], ["Hardware House"]]);
+                    window.XLSX.utils.book_append_sheet(wb, ws, "Vendors");
+                    window.XLSX.writeFile(wb, "Vendor_Template.xlsx");
+                } else { notify("Excel Library loading...", "รอสักครู่"); loadXLSX(); }
+            };
+            
+            const handleExport = () => {
+                const exportData = vendors.map(v => ({ "Vendor Name": v.name }));
+                exportToExcel(exportData, "VendorList", "Vendors");
+            };
+
+            return (
+                <div className="max-w-xl mx-auto bg-white p-6 rounded shadow border-t-4 border-blue-500">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-blue-700 flex gap-2 items-center"><Icons.Store size={20}/> Vendor Setup</h3>
+                        <div className="flex gap-2">
+                            <button onClick={downloadTemplate} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded text-xs hover:bg-slate-200 flex items-center gap-1 shadow-sm"><Icons.FileSpreadsheet size={14}/> Template</button>
+                            <label className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs cursor-pointer flex gap-1 items-center shadow-sm hover:bg-green-100"><Icons.Upload size={14}/> Import<input type="file" hidden onChange={handleImport} accept=".xlsx,.csv"/></label>
+                            <button onClick={handleExport} className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-blue-100"><Icons.Download size={14}/> Export</button>
+                        </div>
+                    </div>
+                    <div className="flex gap-2 mb-4"><input className="border p-2 flex-1 rounded" placeholder="New Vendor" value={val} onChange={e=>setVal(e.target.value)} /><button onClick={()=>{if(val){setVendors([...(vendors||[]), {id:Date.now(), name:val}]); setVal(''); notify("เพิ่มร้านค้าสำเร็จ","สำเร็จ");} else {notify("กรุณาระบุชื่อร้านค้า","ข้อผิดพลาด");}}} className="bg-blue-600 text-white px-6 font-bold rounded shadow-sm hover:bg-blue-700">Add</button></div>
+                    <ul className="divide-y border-t mt-4">{(vendors||[]).map(c=><li key={c.id} className="py-3 px-2 flex justify-between hover:bg-slate-50 rounded"><span className="font-medium">{c.name}</span><button className="text-red-500 hover:bg-red-50 p-1.5 rounded" onClick={()=>{
+                        if(showConfirm){ showConfirm('ต้องการลบร้านค้านี้ใช่หรือไม่?', () => setVendors((vendors||[]).filter(x=>x.id!==c.id))); } else { if(window.confirm('Delete?')) setVendors((vendors||[]).filter(x=>x.id!==c.id)); }
+                    }}><Icons.Trash2 size={16}/></button></li>)}</ul>
+                </div>
+            );
+        };
+
+        const CompanyView = ({ companies, setCompanies, showAlert, showConfirm }) => {
+            const [val, setVal] = useState('');
+            const notify = showAlert || window.alert;
+            
+            const handleExport = () => exportToExcel((companies||[]).map(c => ({ "Company Name": c.name })), "Company_List");
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    if (window.XLSX) {
+                        const wb = window.XLSX.read(evt.target.result, {type: 'binary'});
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const data = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                        let newCompanies = [...(companies||[])];
+                        let count = 0;
+                        const existingNames = new Set(newCompanies.map(u => safeLower(u.name)));
+                        data.forEach(row => {
+                            const keys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+                            const name = keys['company name'] || keys['name'] || keys['ชื่อบริษัท'] || keys['บริษัท'] || keys['ชื่อ'] || keys['company'];
+                            if(name && String(name).trim() !== '' && !existingNames.has(safeLower(name))) {
+                                newCompanies.push({id: `COMP-${Date.now()}-${Math.random()}`, name: String(name).trim()});
+                                existingNames.add(safeLower(name));
+                                count++;
+                            }
+                        });
+                        setCompanies(newCompanies);
+                        notify(`นำเข้าบริษัทสำเร็จ ${count} รายการ`, "สำเร็จ");
+                        e.target.value = null;
+                    } else { notify("Excel Library not loaded.", "ข้อผิดพลาด"); loadXLSX(); }
+                };
+                reader.readAsBinaryString(file);
+            };
+
+            const downloadTemplate = () => {
+                if (window.XLSX) {
+                    const wb = window.XLSX.utils.book_new(); 
+                    const ws = window.XLSX.utils.aoa_to_sheet([["Company Name"], ["บริษัท เอบีซี จำกัด"], ["ช่างสมชาย รับเหมาเทปูน"]]);
+                    window.XLSX.utils.book_append_sheet(wb, ws, "Companies");
+                    window.XLSX.writeFile(wb, "Company_Template.xlsx");
+                } else { notify("Excel Library loading...", "รอสักครู่"); loadXLSX(); }
+            };
+
+            return (
+                <div className="max-w-xl mx-auto bg-white p-6 rounded shadow border-t-4 border-indigo-500">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-indigo-700 flex gap-2 items-center"><Icons.Building size={20}/> Company Setup (บริษัทผู้รับเหมา)</h3>
+                        <div className="flex gap-2">
+                            <button onClick={downloadTemplate} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded text-xs hover:bg-slate-200 flex items-center gap-1 shadow-sm"><Icons.FileSpreadsheet size={14}/> Template</button>
+                            <label className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs cursor-pointer flex gap-1 items-center shadow-sm hover:bg-green-100"><Icons.Upload size={14}/> Import<input type="file" hidden onChange={handleImport} accept=".xlsx,.csv"/></label>
+                            <button onClick={handleExport} className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-indigo-100"><Icons.Download size={14}/> Export</button>
+                        </div>
+                    </div>
+                    <div className="flex gap-2 mb-4"><input className="border p-2 flex-1 rounded" placeholder="New Company" value={val} onChange={e=>setVal(e.target.value)}/><button onClick={()=>{if(val){setCompanies([...(companies||[]), {id:Date.now(), name:val}]);setVal(''); notify("เพิ่มบริษัทสำเร็จ","สำเร็จ");} else {notify("กรุณาระบุชื่อบริษัท", "ข้อผิดพลาด");}}} className="bg-indigo-600 text-white px-6 font-bold rounded shadow-sm hover:bg-indigo-700">Add</button></div>
+                    <ul className="divide-y border-t mt-4">{(companies||[]).map(c=><li key={c.id} className="py-3 px-2 flex justify-between hover:bg-slate-50 rounded"><span className="font-medium">{c.name}</span><button className="text-red-500 hover:bg-red-50 p-1 rounded" onClick={()=>{
+                        if(showConfirm){ showConfirm('ต้องการลบบริษัทนี้ใช่หรือไม่?', () => setCompanies((companies||[]).filter(x=>x.id!==c.id))); } else { if(window.confirm('Delete?')) setCompanies((companies||[]).filter(x=>x.id!==c.id)); }
+                    }}><Icons.Trash2 size={16}/></button></li>)}</ul>
+                </div>
+            );
+        };
+        
+        const PersonnelView = ({ personnel, setPersonnel, showAlert, showConfirm }) => {
+            const [form, setForm] = useState({name:'', role:'ผู้เบิก (Requestor)'});
+            const notify = showAlert || window.alert;
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    if (window.XLSX) {
+                        const wb = window.XLSX.read(evt.target.result, {type: 'binary'});
+                        const ws = wb.Sheets[wb.SheetNames[0]];
+                        const data = window.XLSX.utils.sheet_to_json(ws, { defval: "" });
+                        let newPersonnel = [...(personnel||[])];
+                        let count = 0;
+                        const existingNames = new Set(newPersonnel.map(u => safeLower(u.name)));
+                        data.forEach(row => {
+                            const keys = Object.keys(row).reduce((acc, k) => { acc[k.trim().toLowerCase()] = row[k]; return acc; }, {});
+                            const name = keys['name'] || keys['personnel name'] || keys['ชื่อพนักงาน'] || keys['ชื่อ-สกุล'] || keys['ชื่อ'];
+                            let roleText = keys['role'] || keys['สิทธิ์'] || keys['หน้าที่'] || keys['ตำแหน่ง'] || 'ผู้เบิก (Requestor)';
+                            let finalRole = 'ผู้เบิก (Requestor)';
+                            if(String(roleText).includes('เบิก') || String(roleText).toLowerCase().includes('request')) finalRole = 'ผู้เบิก (Requestor)';
+                            else if(String(roleText).includes('ตรวจ') || String(roleText).toLowerCase().includes('inspect')) finalRole = 'ผู้ตรวจ (Inspector)';
+                            else if(String(roleText).includes('อนุมัติ') || String(roleText).toLowerCase().includes('approv')) finalRole = 'ผู้อนุมัติ (Approver)';
+                            else if(String(roleText).includes('จ่าย') || String(roleText).toLowerCase().includes('dispens')) finalRole = 'ผู้จ่าย (Dispenser)';
+
+                            if(name && String(name).trim() !== '' && !existingNames.has(safeLower(name))) {
+                                newPersonnel.push({id: `P-${Date.now()}-${Math.random()}`, name: String(name).trim(), role: finalRole});
+                                existingNames.add(safeLower(name));
+                                count++;
+                            }
+                        });
+                        setPersonnel(newPersonnel);
+                        notify(`นำเข้ารายชื่อพนักงานสำเร็จ ${count} รายการ`, "สำเร็จ");
+                        e.target.value = null;
+                    } else { notify("Excel Library not loaded.", "ข้อผิดพลาด"); loadXLSX(); }
+                };
+                reader.readAsBinaryString(file);
+            };
+            const downloadTemplate = () => {
+                if (window.XLSX) {
+                    const wb = window.XLSX.utils.book_new(); 
+                    const ws = window.XLSX.utils.aoa_to_sheet([
+                        ["Name (ชื่อ-สกุล)", "Role (สิทธิ์: ผู้เบิก/ผู้ตรวจ/ผู้อนุมัติ/ผู้จ่าย)"], 
+                        ["นายใจดี เบิกเก่ง", "ผู้เบิก"], 
+                        ["นายตาไว ตรวจเยี่ยม", "ผู้ตรวจ"], 
+                        ["นายสายเปย์ อนุมัติ", "ผู้อนุมัติ"]
+                    ]);
+                    window.XLSX.utils.book_append_sheet(wb, ws, "Personnel");
+                    window.XLSX.writeFile(wb, "Personnel_Template.xlsx");
+                } else { notify("Excel Library loading...", "รอสักครู่"); loadXLSX(); }
+            };
+            
+            const handleExport = () => {
+                const exportData = personnel.map(p => ({ "Name": p.name, "Role": p.role }));
+                exportToExcel(exportData, "PersonnelList", "Personnel");
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto">
+                    <div className="flex justify-between items-end mb-4">
+                        <h3 className="font-bold text-pink-700 flex gap-2 items-center text-lg"><Icons.Users size={20}/> Personnel Setup</h3>
+                        <div className="flex gap-2">
+                            <button onClick={downloadTemplate} className="bg-white border border-slate-300 px-3 py-1.5 rounded text-xs hover:bg-slate-100 flex items-center gap-1 shadow-sm text-slate-700"><Icons.FileSpreadsheet size={14}/> Template</button>
+                            <label className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs cursor-pointer flex gap-1 items-center shadow-sm hover:bg-green-100"><Icons.Upload size={14}/> Import (Excel)<input type="file" hidden onChange={handleImport} accept=".xlsx,.csv"/></label>
+                            <button onClick={handleExport} className="bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1.5 rounded text-xs flex gap-1 items-center shadow-sm hover:bg-purple-100"><Icons.Download size={14}/> Export</button>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded shadow mb-4 flex flex-col md:flex-row gap-2 border-t-4 border-pink-500">
+                        <input className="border p-2 rounded flex-1" placeholder="Name" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} />
+                        <select className="border p-2 rounded" value={form.role} onChange={e=>setForm({...form, role:e.target.value})}>
+                            <option>ผู้เบิก (Requestor)</option><option>ผู้ตรวจ (Inspector)</option><option>ผู้อนุมัติ (Approver)</option><option>ผู้จ่าย (Dispenser)</option>
+                        </select>
+                        <button onClick={()=>{if(form.name){setPersonnel([...(personnel||[]), {id:`P-${Date.now()}`, ...form}]); setForm({name:'', role:form.role}); notify("เพิ่มบุคคลากรสำเร็จ", "สำเร็จ");} else { notify("กรุณาระบุชื่อพนักงาน", "ข้อผิดพลาด"); }}} className="bg-pink-600 text-white px-6 py-2 md:py-0 font-bold rounded shadow-sm hover:bg-pink-700">Add</button>
+                    </div>
+                    <div className="bg-white rounded shadow overflow-hidden">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 border-b"><tr><th className="p-3">Name</th><th className="p-3">Role</th><th className="p-3 text-center">Action</th></tr></thead>
+                            <tbody className="divide-y">{(personnel||[]).map(p=><tr key={p.id} className="hover:bg-slate-50"><td className="p-3 font-bold text-slate-700">{p.name}</td><td className="p-3 text-slate-500">{p.role}</td><td className="p-3 text-center"><button className="text-red-500 hover:bg-red-50 p-1.5 rounded" onClick={()=>{
+                                if(showConfirm){ showConfirm('ต้องการลบชื่อนี้ใช่หรือไม่?', () => setPersonnel((personnel||[]).filter(x=>x.id!==p.id))); } else { if(window.confirm('Delete?')) setPersonnel((personnel||[]).filter(x=>x.id!==p.id)); }
+                            }}><Icons.Trash2 size={16}/></button></td></tr>)}</tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const PlanManageView = ({ masterData, setMasterData, plans, setPlans, setIsPlanning, setEditingPlan, showConfirm }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchField, setSearchField] = useState('all');
+
+            const editPlan = (p) => { setEditingPlan(p); setIsPlanning(true); };
+            const deletePlan = (p) => {
+                if(showConfirm){
+                    showConfirm("ต้องการลบแผนสั่งซื้อนี้ใช่หรือไม่?\nยอด Plan ใน Master Data จะถูกหักออกด้วย", () => {
+                        let newMaster = [...masterData];
+                        p.items.forEach(it => {
+                            const mIdx = newMaster.findIndex(m => m.code === it.code);
+                            if (mIdx > -1 && newMaster[mIdx].ordered) {
+                                const oIdx = newMaster[mIdx].ordered.findIndex(x => x.planId === p.id);
+                                if (oIdx > -1) newMaster[mIdx].ordered.splice(oIdx, 1);
+                            }
+                        });
+                        setMasterData(newMaster);
+                        setPlans(prev => prev.filter(x => x.id !== p.id));
+                    });
+                } else {
+                    if(window.confirm("ต้องการลบแผนสั่งซื้อนี้ใช่หรือไม่?")) {
+                        let newMaster = [...masterData];
+                        p.items.forEach(it => {
+                            const mIdx = newMaster.findIndex(m => m.code === it.code);
+                            if (mIdx > -1 && newMaster[mIdx].ordered) {
+                                const oIdx = newMaster[mIdx].ordered.findIndex(x => x.planId === p.id);
+                                if (oIdx > -1) newMaster[mIdx].ordered.splice(oIdx, 1);
+                            }
+                        });
+                        setMasterData(newMaster);
+                        setPlans(prev => prev.filter(x => x.id !== p.id));
+                    }
+                }
+            };
+
+            const filteredPlans = (plans||[]).filter(p => {
+                const term = safeLower(searchTerm);
+                if(!term) return true;
+                return safeLower(p.prNo).includes(term) || safeLower(p.date).includes(term);
+            });
+            
+            const handleExport = () => {
+                let exportData = [];
+                filteredPlans.forEach(p => {
+                    p.items.forEach(it => {
+                        exportData.push({
+                            "Date": formatDate(p.date),
+                            "PR No.": p.prNo,
+                            "Material Code": it.code,
+                            "Material Name": it.name,
+                            "Spec": it.spec,
+                            "Brand": it.brand,
+                            "Unit": it.unit,
+                            "Plan Qty": it.qty
+                        });
+                    });
+                });
+                exportToExcel(exportData, "PlanningHistory", "Plans");
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow border-t-4 border-blue-500 animate-in fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                        <h3 className="font-bold flex items-center gap-2 text-blue-700 whitespace-nowrap"><Icons.ClipboardList size={20}/> Planning History</h3>
+                        <div className="flex gap-2 w-full md:w-auto items-center">
+                             <SearchFilter searchTerm={searchTerm} setSearchTerm={setSearchTerm} searchField={searchField} setSearchField={setSearchField} onSearchClick={()=>setSearchTerm('')} placeholder="Search PR No..." />
+                            <button onClick={handleExport} className="bg-green-50 text-green-700 border border-green-200 px-3 py-2 rounded text-xs font-bold shadow-sm hover:bg-green-100 transition-colors whitespace-nowrap flex items-center gap-1"><Icons.Download size={14}/> Export</button>
+                            <button onClick={() => { setEditingPlan(null); setIsPlanning(true); }} className="bg-blue-600 text-white px-4 py-2 rounded text-xs font-bold shadow hover:bg-blue-700 transition-colors whitespace-nowrap">+ New Plan</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 border-b">
+                                <tr>
+                                    <th className="p-3">Date</th>
+                                    <th className="p-3">PR No.</th>
+                                    <th className="p-3 text-center">Items</th>
+                                    <th className="p-3 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredPlans.map(p=>(
+                                    <tr key={p.id} className="border-b hover:bg-slate-50">
+                                        <td className="p-3 font-medium">{formatDate(p.date)}</td>
+                                        <td className="p-3 font-mono text-xs text-blue-600 font-bold">{p.prNo}</td>
+                                        <td className="p-3 text-center font-bold text-slate-700">{p.items.length}</td>
+                                        <td className="p-3 text-center flex justify-center gap-2">
+                                            <button onClick={() => editPlan(p)} className="text-blue-500 hover:bg-blue-100 p-1.5 rounded transition-colors"><Icons.Edit3 size={16}/></button>
+                                            <button onClick={() => deletePlan(p)} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition-colors"><Icons.Trash2 size={16}/></button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {filteredPlans.length===0 && <tr><td colSpan="4" className="p-12 text-center text-slate-400">ไม่มีข้อมูลแผนการสั่งซื้อ</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const TrackingView = ({ masterData, categoryList, setActiveView }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchField, setSearchField] = useState('all');
+            const [filterCategory, setFilterCategory] = useState('ALL');
+            
+            const activeItems = (masterData||[]).filter(isItemActive);
+            let maxP=6, maxR=6, maxD=10;
+            activeItems.forEach(item => {
+                if (item.disbursed?.length > maxD) maxD = item.disbursed.length;
+                if (item.received?.length > maxR) maxR = item.received.length;
+                if (item.ordered?.length > maxP) maxP = item.ordered.length;
+            });
+            const pCols = Array.from({length:maxP},(_,i)=>i+1);
+            const rCols = Array.from({length:maxR},(_,i)=>i+1);
+            const dCols = Array.from({length:maxD},(_,i)=>i+1);
+            
+            const filtered = sortMasterData(activeItems.filter(item => {
+                if (filterCategory !== 'ALL' && item.category !== filterCategory) return false;
+                const term = safeLower(searchTerm);
+                if (!term) return true;
+                if (searchField === 'all') return safeLower(item.name).includes(term) || safeLower(item.code).includes(term) || safeLower(item.spec).includes(term) || safeLower(item.category).includes(term);
+                return safeLower(item[searchField]).includes(term);
+            }));
+            
+            const handleExport = () => {
+                if (!window.XLSX) {
+                    alert("Excel Library is loading... Please wait.");
+                    loadXLSX();
+                    return;
+                }
+
+                const wb = window.XLSX.utils.book_new();
+
+                // --- 1. TRACKING BOARD SHEET (Multiple rows in one cell for matching UI) ---
+                const wsTrackingData = [];
+                
+                // Header Row 1 (Groups)
+                const head1 = ["Code", "Name", "Brand", "Spec", "Unit", "Cat", "BOQ"];
+                let merges = [];
+                
+                head1.push("Planning Ordered");
+                for(let i=0; i<maxP+1; i++) head1.push(""); 
+                
+                head1.push("Received Record");
+                for(let i=0; i<maxR; i++) head1.push("");
+
+                head1.push("Disbursed Record");
+                for(let i=0; i<maxD; i++) head1.push("");
+                
+                head1.push("Balance");
+                wsTrackingData.push(head1);
+
+                // Header Row 2 (Sub-columns)
+                const head2 = ["Code", "Name", "Brand", "Spec", "Unit", "Cat", "BOQ"];
+                for(let i=1; i<=maxP; i++) head2.push(`#${i}`);
+                head2.push("Total", "Plan.Bal");
+                for(let i=1; i<=maxR; i++) head2.push(`#${i}`);
+                head2.push("Total");
+                for(let i=1; i<=maxD; i++) head2.push(`#${i}`);
+                head2.push("Total", "Final Bal");
+                wsTrackingData.push(head2);
+
+                // Header Merges Configuration
+                let cIdx = 7;
+                merges.push({s:{r:0, c:cIdx}, e:{r:0, c:cIdx+maxP+1}}); // Planning Ordered
+                cIdx += maxP+2;
+                merges.push({s:{r:0, c:cIdx}, e:{r:0, c:cIdx+maxR}}); // Received Record
+                cIdx += maxR+1;
+                merges.push({s:{r:0, c:cIdx}, e:{r:0, c:cIdx+maxD}}); // Disbursed Record
+
+                // Data Processing
+                filtered.forEach(m => {
+                    const totalP = sumArrayQty(m.ordered); 
+                    const totalR = sumArrayQty(m.received); 
+                    const totalD = sumArrayQty(m.disbursed);
+                    
+                    let row = [m.code, m.name, m.brand||'-', m.spec||'-', m.unit, m.category, m.boq];
+
+                    for(let i=0; i<maxP; i++) {
+                        const o = m.ordered && m.ordered[i];
+                        row.push(o && o.qty ? `${o.qty}\n${o.prNo||'-'}\n${formatDate(o.date)}` : '');
+                    }
+                    row.push(totalP, (m.boq||0) - totalP);
+
+                    for(let i=0; i<maxR; i++) {
+                        const r = m.received && m.received[i];
+                        row.push(r && r.qty ? `${r.qty}\n${r.deliveryNo||'-'}\n${formatDate(r.date)}` : '');
+                    }
+                    row.push(totalR);
+
+                    for(let i=0; i<maxD; i++) {
+                        const d = m.disbursed && m.disbursed[i];
+                        row.push(d && d.qty ? `${d.qty}\n${d.reqNo||'-'} ${d.company ? `(${d.company})` : ''}\n${formatDate(d.date)}` : '');
+                    }
+                    row.push(totalD, totalR - totalD);
+
+                    wsTrackingData.push(row);
+                });
+
+                const wsTracking = window.XLSX.utils.aoa_to_sheet(wsTrackingData);
+                wsTracking['!merges'] = merges;
+                window.XLSX.utils.book_append_sheet(wb, wsTracking, "Tracking Board");
+
+                // --- 2. STOCK CARD SHEET (Detailed Material Ledger) ---
+                const wsLedgerData = [];
+                filtered.forEach(m => {
+                    wsLedgerData.push([`Material Code : ${m.code}`, `Material : ${m.name} ${m.spec !== '-' ? m.spec : ''}`, `Brand : ${m.brand||'-'}`, `Unit : ${m.unit}`]);
+                    wsLedgerData.push(["IC Date", "Description/Supplier", "Doc. No.", "Ref Doc.", "Receipt Qty", "Issue Qty", "Balance Qty"]);
+                    
+                    let runningBal = 0;
+                    let totalRec = 0;
+                    let totalIss = 0;
+
+                    let txns = [];
+                    (m.received || []).forEach(r => {
+                        txns.push({ date: r.date, desc: r.vendor, docNo: r.receiptId || '-', ref: r.deliveryNo || r.prNo || '-', recQty: Number(r.qty), issQty: 0, timestamp: r.timestamp || 0 });
+                    });
+                    (m.disbursed || []).forEach(d => {
+                        txns.push({ date: d.date, desc: d.company || d.from || 'Issue', docNo: d.reqNo, ref: d.work || '-', recQty: 0, issQty: Number(d.qty), timestamp: d.timestamp || 0 });
+                    });
+
+                    // Sort by Date, then Timestamp, then Receipt before Issue
+                    txns.sort((a,b) => {
+                        const dateComp = String(a.date).localeCompare(String(b.date));
+                        if (dateComp !== 0) return dateComp;
+                        const tA = a.timestamp || 0;
+                        const tB = b.timestamp || 0;
+                        if (tA !== tB) return tA - tB;
+                        if (a.recQty > 0 && b.issQty > 0) return -1;
+                        if (a.issQty > 0 && b.recQty > 0) return 1;
+                        return 0;
+                    });
+
+                    txns.forEach(t => {
+                        runningBal += t.recQty;
+                        runningBal -= t.issQty;
+                        totalRec += t.recQty;
+                        totalIss += t.issQty;
+                        wsLedgerData.push([
+                            formatDate(t.date), t.desc, t.docNo, t.ref, 
+                            t.recQty ? t.recQty.toFixed(2) : '', 
+                            t.issQty ? t.issQty.toFixed(2) : '', 
+                            runningBal.toFixed(2)
+                        ]);
+                    });
+
+                    wsLedgerData.push(["", "", "", "Total Material Code : " + m.code, totalRec > 0 ? totalRec.toFixed(2) : '0.00', totalIss > 0 ? totalIss.toFixed(2) : '0.00', runningBal.toFixed(2)]);
+                    wsLedgerData.push([]); 
+                    wsLedgerData.push([]); 
+                });
+
+                const wsLedger = window.XLSX.utils.aoa_to_sheet(wsLedgerData);
+                wsLedger['!cols'] = [ {wch: 12}, {wch: 35}, {wch: 18}, {wch: 15}, {wch: 12}, {wch: 12}, {wch: 12} ];
+                window.XLSX.utils.book_append_sheet(wb, wsLedger, "Stock Card");
+
+                window.XLSX.writeFile(wb, "Tracking_And_StockCard.xlsx");
+            };
+
+            return (
+                <div className="bg-white p-4 rounded-xl shadow border border-slate-200 overflow-x-auto animate-in fade-in">
+                    <div className="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div className="flex gap-4 items-center">
+                            <h3 className="font-bold text-lg text-slate-700 whitespace-nowrap flex items-center gap-2"><Icons.Target size={20}/> Tracking Board</h3>
+                            <button onClick={handleExport} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded text-xs font-bold shadow-sm hover:bg-green-100 flex gap-1 items-center transition-colors"><Icons.Download size={14}/> Export Excel</button>
+                            <button onClick={() => setActiveView('PLAN_MANAGE')} className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold shadow hover:bg-blue-700 flex gap-1 items-center transition-colors"><Icons.ClipboardList size={14}/> Add Plan</button>
+                        </div>
+                        <div className="w-full md:w-auto flex gap-2 items-center">
+                            <select className="border border-slate-300 p-2 rounded-lg text-sm bg-white min-w-[120px] outline-none focus:ring-2 focus:ring-blue-500" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}>
+                                <option value="ALL">All Categories</option>
+                                {(categoryList||[]).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                            </select>
+                            <SearchFilter searchTerm={searchTerm} setSearchTerm={setSearchTerm} searchField={searchField} setSearchField={setSearchField} onSearchClick={()=>setSearchTerm('')} placeholder="Search Materials..." />
+                        </div>
+                    </div>
+                    <table className="w-max text-[10px] border-collapse">
+                        <thead>
+                            <tr className="uppercase tracking-widest text-white">
+                                <th className="bg-slate-700 text-white border-r border-slate-500 py-2" colSpan={7}>Materials Info</th>
+                                <th className="bg-blue-600 text-white border-r border-blue-400 py-2 font-bold text-lg" colSpan={maxP+2}>Planning Ordered</th>
+                                <th className="bg-orange-500 border-r border-orange-400 py-2 font-bold text-lg text-white" colSpan={maxR+1}>Received Record</th>
+                                <th className="bg-green-600 border-r border-green-500 py-2 font-bold text-lg text-white" colSpan={maxD+1}>Disbursed Record</th>
+                                <th className="bg-emerald-200 text-slate-800 border-r border-emerald-300 py-2" colSpan={1}>Balance</th>
+                            </tr>
+                            <tr className="bg-slate-100 font-bold border-b-2">
+                                <th className="p-2 border-r">Code</th><th className="p-2 border-r min-w-[150px]">Name</th><th className="p-2 border-r">Brand</th><th className="p-2 border-r">Spec</th><th className="p-2 border-r">Unit</th><th className="p-2 border-r">Cat</th><th className="p-2 border-r bg-white">BOQ</th>
+                                {pCols.map(i=> <th key={`p-${i}`} className="p-0.5 border-r bg-blue-50 w-[85px] min-w-[85px] max-w-[85px] overflow-hidden leading-tight">#{i}</th>)}<th className="p-2 bg-blue-100 border-r">Total</th><th className="p-2 bg-yellow-100 border-r">Plan.Bal</th>
+                                {rCols.map(i=> <th key={`r-${i}`} className="p-0.5 border-r bg-orange-50 w-[85px] min-w-[85px] max-w-[85px] overflow-hidden leading-tight">#{i}</th>)}<th className="p-2 bg-orange-100 border-r">Total</th>
+                                {dCols.map(i=> <th key={`d-${i}`} className="p-0.5 border-r bg-green-50 w-[85px] min-w-[85px] max-w-[85px] overflow-hidden leading-tight">#{i}</th>)}<th className="p-2 bg-green-100 border-r">Total</th><th className="p-2 bg-emerald-100 border-r">Final Bal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filtered.map((m, idx) => {
+                                const totalP = sumArrayQty(m.ordered); const totalR = sumArrayQty(m.received); const totalD = sumArrayQty(m.disbursed); 
+                                return (
+                                    <tr key={m.id || m.code || idx} className="hover:bg-slate-50 border-b">
+                                        <td className="p-2 border-r font-mono text-blue-600">{m.code}</td>
+                                        <td className="p-2 border-r font-bold">{m.name}</td>
+                                        <td className="p-2 border-r text-center">{m.brand}</td>
+                                        <td className="p-2 border-r">{m.spec}</td>
+                                        <td className="p-2 border-r text-center">{m.unit}</td>
+                                        <td className="p-2 border-r text-center">{m.category}</td>
+                                        <td className="p-2 border-r text-center font-bold bg-white text-sm">{m.boq}</td>
+                                        {pCols.map((_, i) => { 
+                                            const o = (m.ordered && m.ordered[i]) || {}; 
+                                            return (
+                                                <td key={`pc-${i}`} className="p-1 border-r align-top bg-blue-50/20 w-[85px] min-w-[85px] max-w-[85px] overflow-hidden text-center">
+                                                    {o.qty ? <div className="detail-cell"><span className="font-bold text-blue-600 text-[11px] leading-tight">{o.qty}</span><span className="text-[8px] text-gray-500 font-bold mt-0.5 leading-tight truncate w-full">{o.prNo||'-'}</span><span className="text-[7px] text-slate-400 leading-tight truncate w-full">{formatDate(o.date)}</span></div> : '-'}
+                                                </td>
+                                            ) 
+                                        })}
+                                        <td className="p-2 border-r text-center font-bold bg-blue-50">{totalP}</td>
+                                        <td className="p-2 border-r text-center font-bold bg-yellow-50">{(m.boq||0)-totalP}</td>
+                                        {rCols.map((_, i) => { const r = (m.received && m.received[i]) || {}; return <td key={`rc-${i}`} className="p-0.5 border-r align-top bg-orange-50/20 text-center w-[85px] min-w-[85px] max-w-[85px] overflow-hidden">{r.qty ? <div className="detail-cell"><span className="font-bold text-orange-600 text-[11px] leading-tight">{r.qty}</span><span className="text-[8px] text-gray-500 font-bold mt-0.5 leading-tight truncate w-full">{r.deliveryNo||'DO-?'}</span><span className="text-[7px] text-slate-400 leading-tight truncate w-full">{formatDate(r.date)}</span></div> : '-'}</td> })}
+                                        <td className="p-2 border-r text-center font-bold bg-orange-100">{totalR}</td>
+                                        {dCols.map((_, i) => { const d = (m.disbursed && m.disbursed[i]) || {}; return <td key={`dc-${i}`} className="p-0.5 border-r align-top bg-green-50/20 text-center w-[85px] min-w-[85px] max-w-[85px] overflow-hidden">{d.qty ? <div className="detail-cell"><span className="font-bold text-green-600 text-[11px] leading-tight">{d.qty}</span><span className="text-[8px] text-gray-500 font-bold mt-0.5 leading-tight truncate w-full">{d.reqNo||'REQ-?'} {d.company ? `(${d.company})` : ''}</span><span className="text-[7px] text-slate-400 leading-tight truncate w-full">{formatDate(d.date)}</span></div> : '-'}</td> })}
+                                        <td className="p-2 border-r text-center font-bold bg-green-100">{totalD}</td>
+                                        <td className="p-2 border-r text-center font-black bg-emerald-100">{totalR - totalD}</td>
+                                    </tr>
+                                );
+                            })}
+                            {filtered.length === 0 && <tr><td colSpan="24" className="text-center p-8 text-slate-400">ไม่มีข้อมูลที่มีความเคลื่อนไหว (No Active Items)</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
+        const ReceivingView = ({ vendors, masterData, setMasterData, receipts, setReceipts, categoryList, setIsReceiving, setEditingReceipt, showConfirm }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchField, setSearchField] = useState('all');
+
+            const editReceipt = (r) => { setEditingReceipt(r); setIsReceiving(true); };
+            const deleteReceipt = (r) => {
+                showConfirm("ต้องการลบใบรับเข้านี้ใช่หรือไม่?\nยอดที่รับเข้าในสต็อกจะถูกหักออกด้วย", () => {
+                    let newMaster = [...masterData];
+                    r.items.forEach(oldItem => {
+                        const mIdx = newMaster.findIndex(m => m.code === oldItem.code);
+                        if (mIdx > -1 && newMaster[mIdx].received) {
+                            const rIdx = newMaster[mIdx].received.findIndex(x => x.receiptId === r.id);
+                            if (rIdx > -1) {
+                                newMaster[mIdx].received.splice(rIdx, 1);
+                            } else {
+                                const fIdx = newMaster[mIdx].received.findIndex(x => 
+                                    x.vendor === r.vendor && x.date === r.date && Number(x.qty) === Number(oldItem.qty)
+                                );
+                                if (fIdx > -1) newMaster[mIdx].received.splice(fIdx, 1);
+                            }
+                        }
+                    });
+                    setMasterData(newMaster);
+                    setReceipts(prev => prev.filter(x => x.id !== r.id));
+                });
+            };
+
+            const filteredReceipts = (receipts||[]).filter(r => {
+                const term = safeLower(searchTerm);
+                if(!term) return true;
+                return safeLower(r.do).includes(term) || safeLower(r.pr).includes(term) || safeLower(r.vendor).includes(term) || safeLower(r.date).includes(term);
+            });
+            
+            const handleExport = () => {
+                let exportData = [];
+                filteredReceipts.forEach(r => {
+                    r.items.forEach(it => {
+                        exportData.push({
+                            "Receipt ID": r.id,
+                            "Date": formatDate(r.date),
+                            "Vendor": r.vendor,
+                            "DO No.": r.do,
+                            "PR No.": r.pr,
+                            "Material Code": it.code,
+                            "Material Name": it.name,
+                            "Spec": it.spec,
+                            "Unit": it.unit,
+                            "Qty Received": it.qty
+                        });
+                    });
+                });
+                exportToExcel(exportData, "ReceivingHistory", "Receipts");
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow border-t-4 border-green-500 animate-in fade-in">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                        <h3 className="font-bold flex items-center gap-2 text-green-700 whitespace-nowrap"><Icons.Truck size={20}/> Receiving History</h3>
+                        <div className="flex gap-2 w-full md:w-auto items-center">
+                             <SearchFilter searchTerm={searchTerm} setSearchTerm={setSearchTerm} searchField={searchField} setSearchField={setSearchField} onSearchClick={()=>setSearchTerm('')} placeholder="Search DO/PR/Vendor..." />
+                            <button onClick={handleExport} className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-2 rounded text-xs font-bold shadow-sm hover:bg-blue-100 transition-colors whitespace-nowrap flex items-center gap-1"><Icons.Download size={14}/> Export</button>
+                            <button onClick={() => { setEditingReceipt(null); setIsReceiving(true); }} className="bg-green-600 text-white px-4 py-2 rounded text-xs font-bold shadow hover:bg-green-700 transition-colors whitespace-nowrap">+ New Receipt</button>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 border-b">
+                                <tr>
+                                    <th className="p-3">Ref ID</th>
+                                    <th className="p-3">Date</th>
+                                    <th className="p-3">Vendor</th>
+                                    <th className="p-3">DO / PR</th>
+                                    <th className="p-3 text-center">Items</th>
+                                    <th className="p-3 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredReceipts.map(r=>(
+                                    <tr key={r.id} className="border-b hover:bg-slate-50">
+                                        <td className="p-3 font-mono text-xs text-gray-500">{r.id}</td>
+                                        <td className="p-3 font-medium">{formatDate(r.date)}</td>
+                                        <td className="p-3 font-bold text-slate-700">{r.vendor}</td>
+                                        <td className="p-3 text-xs text-slate-500">{r.do || '-'} / {r.pr || '-'}</td>
+                                        <td className="p-3 text-center font-bold text-green-700">{r.items.length}</td>
+                                        <td className="p-3 text-center flex justify-center gap-2">
+                                            <button onClick={() => editReceipt(r)} className="text-blue-500 hover:bg-blue-100 p-1.5 rounded transition-colors"><Icons.Edit3 size={16}/></button>
+                                            <button onClick={() => deleteReceipt(r)} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition-colors"><Icons.Trash2 size={16}/></button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {filteredReceipts.length===0 && <tr><td colSpan="6" className="p-12 text-center text-slate-400">ไม่มีข้อมูลประวัติการรับเข้า</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const StockCardView = ({ masterData, categoryList }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [filterCategory, setFilterCategory] = useState('ALL');
+            const [filterSupplier, setFilterSupplier] = useState('');
+            const [startDate, setStartDate] = useState('');
+            const [endDate, setEndDate] = useState('');
+            
+            // ดึงเฉพาะรายการที่มีความเคลื่อนไหว (มีรับเข้า หรือ มีเบิกออก)
+            const activeItems = masterData.filter(m => (m.received && m.received.length > 0) || (m.disbursed && m.disbursed.length > 0));
+            
+            const filtered = sortMasterData(activeItems.filter(item => {
+                if (filterCategory !== 'ALL' && item.category !== filterCategory) return false;
+                const term = safeLower(searchTerm);
+                if (!term) return true;
+                return safeLower(item.name).includes(term) || safeLower(item.code).includes(term) || safeLower(item.spec).includes(term);
+            }));
+
+            // ฟังก์ชันสำหรับจัดเรียงรายการ (วันที่ -> เวลาทำรายการ -> รับเข้าก่อนเบิกออก)
+            const sortTransactions = (txns) => {
+                return txns.sort((a, b) => {
+                    const dateComp = String(a.date).localeCompare(String(b.date));
+                    if (dateComp !== 0) return dateComp;
+                    const tA = a.timestamp || 0;
+                    const tB = b.timestamp || 0;
+                    if (tA !== tB) return tA - tB;
+                    // ถ้าวันที่เดียวกันและไม่มี Timestamp (ข้อมูลเก่า) ให้เอา รับเข้า(recQty) ขึ้นก่อน เบิกออก(issQty) เสมอ
+                    if (a.recQty > 0 && b.issQty > 0) return -1;
+                    if (a.issQty > 0 && b.recQty > 0) return 1;
+                    return 0;
+                });
+            };
+
+            const handleExport = () => {
+                if (!window.XLSX) {
+                    alert("Excel Library is loading... Please wait.");
+                    loadXLSX();
+                    return;
+                }
+
+                const wb = window.XLSX.utils.book_new();
+                const wsData = [];
+                
+                filtered.forEach(m => {
+                    let bfQty = 0;
+                    let totalRec = 0;
+                    let totalIss = 0;
+
+                    let txns = [];
+                    (m.received || []).forEach(r => txns.push({ date: r.date, desc: r.vendor, docNo: r.receiptId || '-', ref: r.deliveryNo || r.prNo || '-', recQty: Number(r.qty), issQty: 0, timestamp: r.timestamp || 0 }));
+                    (m.disbursed || []).forEach(d => txns.push({ date: d.date, desc: d.company || d.from || 'Issue', docNo: d.reqNo, ref: d.work || '-', recQty: 0, issQty: Number(d.qty), timestamp: d.timestamp || 0 }));
+
+                    sortTransactions(txns);
+
+                    let currentBal = 0;
+                    let displayTxns = [];
+
+                    txns.forEach(t => {
+                        currentBal += t.recQty;
+                        currentBal -= t.issQty;
+
+                        let inDateRange = true;
+                        if (startDate && t.date < startDate) {
+                            inDateRange = false;
+                            bfQty += t.recQty;
+                            bfQty -= t.issQty;
+                        }
+                        if (endDate && t.date > endDate) {
+                            inDateRange = false;
+                        }
+
+                        let matchSupplier = true;
+                        if (filterSupplier && !safeLower(t.desc).includes(safeLower(filterSupplier))) {
+                            matchSupplier = false;
+                        }
+
+                        if (inDateRange && matchSupplier) {
+                            totalRec += t.recQty;
+                            totalIss += t.issQty;
+                            displayTxns.push({ ...t, runningBal: currentBal });
+                        }
+                    });
+
+                    // ถ้าไม่มีรายการที่แสดงเลยหลังจากการ Filter ให้ข้ามสินค้านี้ไป (เว้นแต่ต้องการแสดงยอด Bf)
+                    if (displayTxns.length === 0 && !startDate) return;
+
+                    // Header แถวบนสุดของตารางแต่ละไอเทม
+                    wsData.push([`Material Code : ${m.code}`, `Material : ${m.name} ${m.spec !== '-' ? m.spec : ''}`, `Brand : ${m.brand||'-'}`, `Unit : ${m.unit}`]);
+                    // หัวคอลัมน์
+                    wsData.push(["IC Date", "Description/Supplier", "Doc. No.", "Ref Doc.", "Receipt Qty", "Issue Qty", "Balance Qty"]);
+                    
+                    if (startDate && !filterSupplier) { // ยอดยกมา จะแสดงสมบูรณ์ที่สุดเมื่อไม่ได้กรอง Supplier
+                        wsData.push([
+                            formatDate(startDate), "Brought Forward (ยอดยกมา)", "-", "-", 
+                            "", "", bfQty.toFixed(2)
+                        ]);
+                    }
+
+                    displayTxns.forEach(t => {
+                        wsData.push([
+                            formatDate(t.date), t.desc, t.docNo, t.ref, 
+                            t.recQty ? t.recQty.toFixed(2) : '', 
+                            t.issQty ? t.issQty.toFixed(2) : '', 
+                            t.runningBal.toFixed(2)
+                        ]);
+                    });
+
+                    // สรุปยอด Total ของที่กรองได้
+                    wsData.push(["", "", "", "Total Material Code : " + m.code, totalRec > 0 ? totalRec.toFixed(2) : '0.00', totalIss > 0 ? totalIss.toFixed(2) : '0.00', runningBal.toFixed(2)]);
+                    wsData.push([]); 
+                    wsData.push([]); 
+                });
+
+                if (wsData.length === 0) {
+                    alert("ไม่มีข้อมูลที่จะส่งออก (อาจเพราะเงื่อนไขการกรองไม่มีข้อมูลตรงกัน)");
+                    return;
+                }
+
+                const ws = window.XLSX.utils.aoa_to_sheet(wsData);
+                // กำหนดความกว้างคอลัมน์ให้พอดีสวยงาม
+                ws['!cols'] = [ {wch: 12}, {wch: 35}, {wch: 18}, {wch: 15}, {wch: 12}, {wch: 12}, {wch: 12} ];
+                
+                window.XLSX.utils.book_append_sheet(wb, ws, "Stock Card");
+                window.XLSX.writeFile(wb, "StockCard_Ledger.xlsx");
+            };
+
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="bg-white p-6 rounded-xl shadow border-t-4 border-indigo-500">
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                            <h3 className="font-bold flex items-center gap-2 text-indigo-700 whitespace-nowrap text-xl"><Icons.Book size={24}/> Stock Card (Material Ledger)</h3>
+                            <button onClick={handleExport} className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-indigo-100 transition-colors whitespace-nowrap flex items-center gap-2"><Icons.Download size={16}/> Export Excel</button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-200 items-end">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Category (หมวดหมู่)</label>
+                                <select className="border border-slate-300 p-2 rounded-lg text-sm bg-white min-w-[150px] outline-none focus:ring-2 focus:ring-indigo-500" value={filterCategory} onChange={e=>setFilterCategory(e.target.value)}>
+                                    <option value="ALL">ทั้งหมด (All Categories)</option>
+                                    {(categoryList||[]).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">From Date (ตั้งแต่)</label>
+                                <input type="date" className="border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" value={startDate} onChange={e=>setStartDate(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">To Date (ถึง)</label>
+                                <input type="date" className="border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500" value={endDate} onChange={e=>setEndDate(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Supplier / Desc (ชื่อผู้เบิก/ผู้จำหน่าย)</label>
+                                <input type="text" className="border border-slate-300 p-2 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500 min-w-[180px]" placeholder="ค้นหาชื่อ..." value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
+                            </div>
+                            <div className="flex-1 flex items-end">
+                                <div className="relative w-full md:w-64 ml-auto">
+                                    <input className="w-full border border-slate-300 p-2 pl-9 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Search Code, Name..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+                                    <Icons.Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="space-y-8">
+                            {filtered.map(m => {
+                                let bfQty = 0;
+                                let totalRec = 0;
+                                let totalIss = 0;
+
+                                let txns = [];
+                                (m.received || []).forEach(r => txns.push({ date: r.date, desc: r.vendor, docNo: r.receiptId || '-', ref: r.deliveryNo || r.prNo || '-', recQty: Number(r.qty), issQty: 0, timestamp: r.timestamp || 0 }));
+                                (m.disbursed || []).forEach(d => txns.push({ date: d.date, desc: d.company || d.from || 'Issue', docNo: d.reqNo, ref: d.work || '-', recQty: 0, issQty: Number(d.qty), timestamp: d.timestamp || 0 }));
+                                
+                                sortTransactions(txns);
+
+                                let currentBal = 0;
+                                let displayTxns = [];
+
+                                txns.forEach(t => {
+                                    currentBal += t.recQty;
+                                    currentBal -= t.issQty;
+
+                                    let inDateRange = true;
+                                    if (startDate && t.date < startDate) {
+                                        inDateRange = false;
+                                        bfQty += t.recQty;
+                                        bfQty -= t.issQty;
+                                    }
+                                    if (endDate && t.date > endDate) {
+                                        inDateRange = false;
+                                    }
+
+                                    let matchSupplier = true;
+                                    if (filterSupplier && !safeLower(t.desc).includes(safeLower(filterSupplier))) {
+                                        matchSupplier = false;
+                                    }
+
+                                    if (inDateRange && matchSupplier) {
+                                        totalRec += t.recQty;
+                                        totalIss += t.issQty;
+                                        displayTxns.push({ ...t, runningBal: currentBal });
+                                    }
+                                });
+
+                                // ถ้ามีการกรอง แต่ไม่พบรายการสำหรับ Material นี้เลย ให้ซ่อนไป
+                                if (displayTxns.length === 0 && (filterSupplier || (startDate && endDate))) return null;
+
+                                return (
+                                    <div key={m.code} className="border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm">
+                                        <div className="bg-slate-100 px-4 py-3 border-b border-slate-300 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                                            <div className="font-black text-slate-800 underline underline-offset-4 decoration-slate-400">{m.code}</div>
+                                            <div className="font-bold text-slate-800">Material : <span className="font-medium text-slate-700">{m.name} {m.spec !== '-' ? m.spec : ''}</span></div>
+                                            <div className="font-bold text-slate-800">Brand : <span className="font-medium text-slate-700">{m.brand || '-'}</span></div>
+                                            <div className="font-bold text-slate-800">Unit : <span className="font-medium text-slate-700">{m.unit}</span></div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="border-b border-slate-200 bg-white">
+                                                    <tr className="text-slate-600">
+                                                        <th className="p-3 w-28 whitespace-nowrap">IC Date</th>
+                                                        <th className="p-3 min-w-[200px]">Description/Supplier</th>
+                                                        <th className="p-3 w-32 whitespace-nowrap">Doc. No.</th>
+                                                        <th className="p-3 w-32 whitespace-nowrap">Ref Doc.</th>
+                                                        <th className="p-3 w-24 text-right whitespace-nowrap">Receipt Qty</th>
+                                                        <th className="p-3 w-24 text-right whitespace-nowrap">Issue Qty</th>
+                                                        <th className="p-3 w-24 text-right font-bold whitespace-nowrap">Balance Qty</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {startDate && !filterSupplier && (
+                                                        <tr className="bg-amber-50/50">
+                                                            <td className="p-3 font-medium text-slate-600">{formatDate(startDate)}</td>
+                                                            <td className="p-3 text-amber-800 font-bold">Brought Forward (ยอดยกมา)</td>
+                                                            <td className="p-3 text-center text-slate-300">-</td>
+                                                            <td className="p-3 text-center text-slate-300">-</td>
+                                                            <td className="p-3 text-center text-slate-300">-</td>
+                                                            <td className="p-3 text-center text-slate-300">-</td>
+                                                            <td className="p-3 text-right font-bold text-amber-700">{bfQty.toFixed(2)}</td>
+                                                        </tr>
+                                                    )}
+                                                    {displayTxns.map((t, idx) => {
+                                                        return (
+                                                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-3 font-medium text-slate-600">{formatDate(t.date)}</td>
+                                                                <td className="p-3 text-slate-800 max-w-[250px] truncate" title={t.desc}>
+                                                                    {filterSupplier ? (
+                                                                        <span dangerouslySetInnerHTML={{ __html: String(t.desc).replace(new RegExp(filterSupplier, 'gi'), match => `<mark class="bg-indigo-200">${match}</mark>`) }} />
+                                                                    ) : t.desc}
+                                                                </td>
+                                                                <td className="p-3 font-mono text-[10px] text-slate-500">{t.docNo}</td>
+                                                                <td className="p-3 font-mono text-[10px] text-slate-500">{t.ref}</td>
+                                                                <td className="p-3 text-right font-medium text-green-600">{t.recQty ? t.recQty.toFixed(2) : ''}</td>
+                                                                <td className="p-3 text-right font-medium text-red-600">{t.issQty ? t.issQty.toFixed(2) : ''}</td>
+                                                                <td className="p-3 text-right font-bold text-slate-700 bg-slate-50/50">{t.runningBal.toFixed(2)}</td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                    <tr className="border-t-2 border-slate-200 border-dashed bg-slate-50/80">
+                                                        <td colSpan="4" className="p-3 text-right font-bold text-slate-700">Total Material Code : {m.code}</td>
+                                                        <td className="p-3 text-right font-black text-green-700">{totalRec > 0 ? totalRec.toFixed(2) : '0.00'}</td>
+                                                        <td className="p-3 text-right font-black text-red-700">{totalIss > 0 ? totalIss.toFixed(2) : '0.00'}</td>
+                                                        <td className="p-3 text-right font-black text-indigo-700">{displayTxns.length > 0 ? displayTxns[displayTxns.length-1].runningBal.toFixed(2) : bfQty.toFixed(2)}</td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                            {filtered.length === 0 && <div className="text-center p-12 text-slate-500 bg-white rounded-xl border border-dashed border-slate-300 shadow-sm"><Icons.FileText size={48} className="mx-auto mb-4 text-slate-300"/>ไม่พบข้อมูลความเคลื่อนไหว (No Transactions Found)</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const RequestSetupView = ({ reqConfig, setReqConfig, masterData, setMasterData, requests, setRequests, personnel, companies, showAlert }) => {
+            const [localConfig, setLocalConfig] = useState(reqConfig);
+            const [manualForm, setManualForm] = useState({ id: '', date: new Date().toISOString().split('T')[0], from: '', company: '', work: '', items: [] });
+            const [mq, setMq] = useState('');
+            const [searchField, setSearchField] = useState('all');
+            const [showAll, setShowAll] = useState(false);
+
+            const handleSaveConfig = () => { setReqConfig(localConfig); showAlert("บันทึกการตั้งค่าสำเร็จ", "สำเร็จ"); };
+            
+            const addManualItem = (m) => { 
+                const stock = sumArrayQty(m.received) - sumArrayQty(m.disbursed);
+                if (stock <= 0) return showAlert(`Stock หมด! (เหลือ ${stock})`, "ไม่สามารถเบิกได้");
+                setManualForm(prev => ({...prev, items: [...prev.items, {...m, qty: 1}]})); 
+                setMq(''); 
+                setShowAll(false); 
+            };
+            
+            const updateManualQty = (idx, val) => {
+                const n = [...manualForm.items];
+                const itemCode = n[idx].code;
+                const mItem = masterData.find(m=>m.code===itemCode);
+                const stock = sumArrayQty(mItem.received) - sumArrayQty(mItem.disbursed);
+                let newQty = Number(val);
+                if (newQty > stock) { showAlert(`เบิกเกินสต็อก! (เหลือสูงสุด ${stock})`, "แจ้งเตือน"); newQty = stock; }
+                n[idx].qty = newQty;
+                setManualForm(prev => ({...prev, items: n}));
+            };
+            
+            const saveManualRequest = () => {
+                if(!manualForm.id) return showAlert("กรุณาระบุเลขที่ใบเบิก", "ข้อมูลไม่ครบถ้วน");
+                if(!manualForm.company) return showAlert("กรุณาระบุบริษัทที่เบิก", "ข้อมูลไม่ครบถ้วน");
+                if(manualForm.items.length === 0) return showAlert("กรุณาเลือกรายการเบิกอย่างน้อย 1 รายการ", "ข้อมูลไม่ครบถ้วน");
+                
+                const newReq = { id: manualForm.id, sheetNo: manualForm.id, from: manualForm.from, company: manualForm.company, date: manualForm.date, status: 'Approved (Manual)', items: manualForm.items };
+                setRequests(prev => [newReq, ...prev]);
+                
+                const newMaster = [...masterData];
+                manualForm.items.forEach(item => {
+                    const idx = newMaster.findIndex(m => m.code === item.code);
+                    if(idx > -1) { 
+                        if(!newMaster[idx].disbursed) newMaster[idx].disbursed = []; 
+                        newMaster[idx].disbursed.push({ qty: Number(item.qty), date: manualForm.date, reqNo: manualForm.id, company: manualForm.company, timestamp: Date.now() }); 
+                    }
+                });
+                setMasterData(newMaster); 
+                showAlert("บันทึกประวัติใบเบิกย้อนหลังเรียบร้อย", "สำเร็จ");
+                setManualForm({ id: '', date: new Date().toISOString().split('T')[0], from: '', company: '', work: '', items: [] });
+            };
+
+            const searchResults = sortMasterData(masterData.filter(m => {
+                if(!isItemActive(m)) return false;
+                const term = safeLower(mq);
+                if (!term) return showAll;
+                if (searchField === 'all') return safeLower(m.name).includes(term) || safeLower(m.code).includes(term) || safeLower(m.spec).includes(term);
+                return safeLower(m[searchField]).includes(term);
+            }));
+
+            return (
+                <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in">
+                    <div className="bg-white p-6 rounded-xl shadow border-l-4 border-purple-600">
+                        <h3 className="font-bold flex items-center gap-2"><Icons.Settings size={18}/> Auto-Generate Config</h3>
+                        <div className="flex gap-4 mt-3">
+                            <input className="border p-2 rounded" placeholder="Prefix (e.g. REQ-24-)" value={localConfig.prefix} onChange={e=>setLocalConfig({...localConfig, prefix:e.target.value})}/>
+                            <input type="number" className="border p-2 rounded w-24 text-center" placeholder="Next Run" value={localConfig.nextRun} onChange={e=>setLocalConfig({...localConfig, nextRun:Number(e.target.value)})}/>
+                            <button onClick={handleSaveConfig} className="bg-purple-600 text-white px-6 rounded font-bold shadow hover:bg-purple-700">Save</button>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-white p-6 rounded-xl shadow border-l-4 border-slate-500">
+                        <h3 className="font-bold flex items-center gap-2"><Icons.FileText size={18}/> Manual Request (บันทึกใบเบิกย้อนหลัง)</h3>
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                            <div><label className="text-xs font-bold text-slate-500 uppercase">Req No.</label><input className="w-full border p-2 rounded mt-1" placeholder="REQ-XXXX" value={manualForm.id} onChange={e=>setManualForm({...manualForm, id:e.target.value})}/></div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Date</label>
+                                <DateInput value={manualForm.date} onChange={v => setManualForm({...manualForm, date: v})} className="mt-1" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Company (บริษัทที่เบิก)</label>
+                                <select className="w-full border p-2 rounded mt-1 bg-white" value={manualForm.company} onChange={e=>setManualForm({...manualForm, company:e.target.value})}>
+                                    <option value="">Select Company</option>
+                                    {(companies||[]).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">Requestor / Receiver</label>
+                                <select className="w-full border p-2 rounded mt-1 bg-white" value={manualForm.from} onChange={e=>setManualForm({...manualForm, from:e.target.value})}>
+                                    <option value="">Select Personnel</option>
+                                    {(personnel||[]).map(p=><option key={p.id} value={p.name}>{p.name} ({p.role})</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div className="relative mt-4 flex gap-2">
+                            <div className="relative flex-1">
+                                <Icons.Search className="absolute left-2 top-2.5 text-gray-400 w-5 h-5"/>
+                                <input className="w-full border p-2 pl-9 rounded bg-slate-50" placeholder="Search item to request..." value={mq} onChange={e=>setMq(e.target.value)} />
+                            </div>
+                            <button onClick={()=>setShowAll(!showAll)} className="bg-slate-200 text-slate-700 px-4 rounded font-bold hover:bg-slate-300 transition-colors">Show All</button>
+                            
+                            {(mq || showAll) && (
+                                <div className="absolute w-full top-12 bg-white border shadow-xl rounded-b max-h-60 overflow-auto z-10">
+                                    {searchResults.map(m=>{ 
+                                        const stock = sumArrayQty(m.received) - sumArrayQty(m.disbursed); 
+                                        return (
+                                            <div key={m.code} className="p-3 hover:bg-orange-50 border-b cursor-pointer flex justify-between items-center transition-colors" onClick={()=>addManualItem(m)}>
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{m.name}</div>
+                                                    <div className="text-xs mt-0.5">
+                                                        <span className="text-orange-600 font-bold mr-2">{m.brand || '-'}</span>
+                                                        <span className="text-gray-500">{m.spec}</span>
+                                                        <span className="text-gray-400 ml-2 font-mono">{m.code}</span>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-sm font-black px-2 py-1 rounded ${stock>0?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>Stock: {stock}</span>
+                                            </div>
+                                        )
+                                    })}
+                                    {searchResults.length === 0 && <div className="p-4 text-center text-slate-400">No active items found.</div>}
+                                </div>
+                            )}
+                        </div>
+                        
+                        {manualForm.items.length > 0 && (
+                            <div className="mt-4 border rounded-lg overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 border-b"><tr><th className="text-left p-3">Item</th><th className="w-24 text-center p-3">Qty</th></tr></thead>
+                                    <tbody className="divide-y">
+                                        {manualForm.items.map((it,i)=>(
+                                            <tr key={i} className="hover:bg-slate-50">
+                                                <td className="p-3 font-medium">{it.name} <span className="text-slate-400 text-xs ml-1">({it.spec})</span></td>
+                                                <td className="p-2"><input type="number" className="w-full border text-center rounded p-1.5 focus:ring-2 focus:ring-blue-500 outline-none" value={it.qty} onChange={e=>updateManualQty(i,e.target.value)}/></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        
+                        <button onClick={saveManualRequest} className="bg-slate-800 text-white px-4 py-3 rounded-lg mt-6 w-full font-bold shadow-md hover:bg-slate-900 transition-colors flex justify-center items-center gap-2"><Icons.Save size={18}/> Save Manual Request</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- ERROR BOUNDARY ---
+        class ErrorBoundary extends React.Component {
+            constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-8 bg-red-50 min-h-screen font-sans text-center flex flex-col items-center justify-center">
+                            <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg border-t-4 border-red-600">
+                                <h1 className="text-2xl font-bold text-red-600 mb-4">🚨 ระบบเกิดข้อผิดพลาดร้ายแรง</h1>
+                                <p className="text-slate-600 mb-6">หน้าจอไม่สามารถแสดงผลได้ แต่ข้อมูลของคุณยังปลอดภัยอยู่ในเครื่อง!</p>
+                                <button 
+                                    onClick={() => {
+                                        let best='', max=0;
+                                        for(let i=0; i<localStorage.length; i++){
+                                            let v = localStorage.getItem(localStorage.key(i));
+                                            if(v && v.includes('masterData') && v.length>max){ max=v.length; best=v; }
+                                        }
+                                        if(best){
+                                            const a=document.createElement('a');
+                                            a.href=URL.createObjectURL(new Blob([best], {type:'application/json'}));
+                                            a.download='Emergency_Backup.json';
+                                            a.click();
+                                        } else alert('ไม่พบข้อมูลสำรอง');
+                                    }}
+                                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg mb-4 w-full transition-colors"
+                                >
+                                    ⬇️ ดาวน์โหลดข้อมูลสำรอง (Backup)
+                                </button>
+                                <button 
+                                    onClick={() => { localStorage.removeItem('project_planner_db_v85_edit_receiving'); window.location.reload(); }}
+                                    className="text-slate-400 hover:text-slate-600 underline text-sm"
+                                >
+                                    ล้างข้อมูลและรีเฟรชหน้าจอ (Reset)
+                                </button>
+                                <div className="mt-6 p-4 bg-slate-100 rounded text-left text-xs font-mono text-red-800 overflow-auto max-h-40">
+                                    {this.state.error && this.state.error.toString()}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
+        const App = () => {
+            const [activeView, setActiveView] = useState('TRACKING');
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [isLoaded, setIsLoaded] = useState(false);
+            
+            const [reqConfig, setReqConfig] = useState({ prefix: 'REQ-24-', nextRun: 1 });
+            const [masterData, setMasterData] = useState([]);
+            const [categoryList, setCategoryList] = useState([{id: 'CAT-1', name: 'General', abbr: 'GN'}]);
+            const [unitList, setUnitList] = useState([{id: 'UNIT-1', name: 'Pcs'}]);
+            const [personnel, setPersonnel] = useState([]);
+            const [requests, setRequests] = useState([]);
+            const [receipts, setReceipts] = useState([]);
+            const [plans, setPlans] = useState([]);
+            const [vendors, setVendors] = useState([]);
+            const [companies, setCompanies] = useState([]);
+            
+            // Filters
+            const [summaryCat, setSummaryCat] = useState('ALL');
+
+            // Modal States
+            const [isReceiving, setIsReceiving] = useState(false);
+            const [editingReceipt, setEditingReceipt] = useState(null);
+            const [isCreatingReq, setIsCreatingReq] = useState(false);
+            const [editingRequest, setEditingRequest] = useState(null);
+            const [viewingRequestIdx, setViewingRequestIdx] = useState(null);
+            const [isPlanning, setIsPlanning] = useState(false);
+            const [editingPlan, setEditingPlan] = useState(null);
+
+            // Dialog UI States
+            const [alertMsg, setAlertMsg] = useState(null);
+            const [confirmMsg, setConfirmMsg] = useState(null);
+
+            const showAlert = (message, title = "แจ้งเตือน") => setAlertMsg({ title, message });
+            const showConfirm = (message, onConfirm, title = "ยืนยันการทำรายการ") => setConfirmMsg({ title, message, onConfirm });
+
+            // Recovery Modal State
+            const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+            const [recoveryOptions, setRecoveryOptions] = useState([]);
+
+            useEffect(() => {
+                loadXLSX();
+                
+                // 🚀 SUPER AUTO-RECOVERY: Scan all localStorage to find the largest valid database
+                let parsed = null;
+                let maxLength = -1;
+                let bestKey = '';
+
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    try {
+                        const raw = localStorage.getItem(key);
+                        if (raw && raw.includes('masterData')) {
+                            const p = JSON.parse(raw);
+                            if (p && p.masterData && Array.isArray(p.masterData)) {
+                                if (raw.length > maxLength) {
+                                    maxLength = raw.length;
+                                    parsed = p;
+                                    bestKey = key;
+                                }
+                            }
+                        }
+                    } catch (e) { }
+                }
+
+                if (parsed) {
+                    console.log("🔥 Recovered Data from Key:", bestKey, "Size:", maxLength);
+                    let loadedMasterData = parsed.masterData || [];
+                    let loadedCats = parsed.categoryList || [];
+                    loadedCats = loadedCats.map(c => c.abbr ? c : { ...c, abbr: c.name.substring(0, 2).toUpperCase() });
+                    if(loadedCats.length === 0) loadedCats = [{id: 'CAT-1', name: 'General', abbr: 'GN'}];
+                    
+                    let loadedUnits = parsed.unitList || [];
+                    let loadedPersonnel = parsed.personnel || [];
+                    let loadedRequests = parsed.requests || [];
+                    let loadedReceipts = parsed.receipts || [];
+                    let loadedPlans = parsed.plans || [];
+                    let loadedVendors = parsed.vendors || [];
+                    let loadedCompanies = parsed.companies && parsed.companies.length ? parsed.companies : [{ id: Date.now(), name: 'บริษัทหลัก (Main Contractor)' }];
+
+                    if(parsed.reqConfig) setReqConfig(parsed.reqConfig);
+
+                    // --- DATA MIGRATION: Convert inline tracking data to History records ---
+                    loadedMasterData.forEach(m => {
+                        // Plans Migration
+                        if (m.ordered && Array.isArray(m.ordered)) {
+                            m.ordered.forEach(o => {
+                                if (o.qty && Number(o.qty) > 0 && (!o.planId || !loadedPlans.find(p => p.id === o.planId))) {
+                                    let plan = loadedPlans.find(p => p.prNo === (o.prNo || 'N/A') && p.date === (o.date || ''));
+                                    if (!plan) {
+                                        plan = { id: `PLAN-MIG-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, prNo: o.prNo || 'N/A', date: o.date || '', items: [] };
+                                        loadedPlans.push(plan);
+                                    }
+                                    if (!plan.items.find(i => i.code === m.code)) {
+                                        plan.items.push({ code: m.code, name: m.name, spec: m.spec, brand: m.brand, unit: m.unit, qty: o.qty });
+                                    }
+                                    o.planId = plan.id;
+                                }
+                            });
+                        }
+                        
+                        // Receipts Migration
+                        if (m.received && Array.isArray(m.received)) {
+                            m.received.forEach(r => {
+                                if (r.qty && Number(r.qty) > 0 && (!r.receiptId || !loadedReceipts.find(p => p.id === r.receiptId))) {
+                                    let rec = loadedReceipts.find(p => p.do === (r.deliveryNo || '') && p.date === (r.date || ''));
+                                    if (!rec) {
+                                        rec = { id: `REC-MIG-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, vendor: r.vendor || 'Unknown', do: r.deliveryNo || '', pr: r.prNo || '', date: r.date || '', items: [] };
+                                        loadedReceipts.push(rec);
+                                    }
+                                    if (!rec.items.find(i => i.code === m.code)) {
+                                        rec.items.push({ code: m.code, name: m.name, spec: m.spec, brand: m.brand, unit: m.unit, qty: r.qty });
+                                    }
+                                    r.receiptId = rec.id;
+                                }
+                            });
+                        }
+                        
+                        // Requests/Disbursed Migration
+                        if (m.disbursed && Array.isArray(m.disbursed)) {
+                            m.disbursed.forEach(d => {
+                                if (d.qty && Number(d.qty) > 0 && (!d.reqNo || !loadedRequests.find(req => req.id === d.reqNo || req.sheetNo === d.reqNo))) {
+                                    let reqName = d.reqNo || `REQ-MIG-${d.date || 'Old'}`;
+                                    let req = loadedRequests.find(p => p.id === reqName);
+                                    if (!req) {
+                                        req = { id: reqName, sheetNo: reqName, from: d.company || 'Unknown', company: d.company || '', date: d.date || '', work: '', status: 'Approved', items: [] };
+                                        loadedRequests.push(req);
+                                    }
+                                    if (!req.items.find(i => i.code === m.code)) {
+                                        req.items.push({ code: m.code, name: m.name, spec: m.spec, brand: m.brand, unit: m.unit, qty: d.qty });
+                                    }
+                                    d.reqNo = req.id;
+                                }
+                            });
+                        }
+                    });
+
+                    setMasterData(loadedMasterData);
+                    setCategoryList(loadedCats);
+                    setUnitList(loadedUnits);
+                    setPersonnel(loadedPersonnel);
+                    setRequests(loadedRequests);
+                    setReceipts(loadedReceipts);
+                    setPlans(loadedPlans);
+                    setVendors(loadedVendors);
+                    setCompanies(loadedCompanies);
+                } else {
+                    setCompanies([{ id: Date.now(), name: 'บริษัทหลัก (Main Contractor)' }]);
+                }
+
+                // Prevent state overwrite race condition
+                setTimeout(() => {
+                    setIsLoaded(true);
+                }, 500);
+            }, []);
+
+            useEffect(() => {
+                if (isLoaded) {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify({ masterData, categoryList, unitList, personnel, requests, receipts, plans, reqConfig, vendors, companies }));
+                }
+            }, [masterData, categoryList, unitList, personnel, requests, receipts, plans, reqConfig, vendors, companies, isLoaded]);
+
+            // --- SUPER BACKUP & RESTORE SYSTEMS ---
+            const handleExportBackup = () => {
+                const dataStr = JSON.stringify({ masterData, categoryList, unitList, personnel, requests, receipts, plans, reqConfig, vendors, companies });
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const exportFileDefaultName = `MaterialControl_Backup_${new Date().toISOString().split('T')[0]}.json`;
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri);
+                linkElement.setAttribute('download', exportFileDefaultName);
+                linkElement.click();
+            };
+
+            const handleImportBackup = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const parsed = JSON.parse(evt.target.result);
+                        if (parsed && parsed.masterData) {
+                            localStorage.setItem(STORAGE_KEY, evt.target.result);
+                            showAlert("กู้คืนข้อมูลจากไฟล์ Backup สำเร็จ! ระบบจะทำการรีโหลดหน้าจอใหม่", "กู้คืนสำเร็จ");
+                            setTimeout(() => { window.location.reload(); }, 1500);
+                        } else {
+                            showAlert("ไฟล์ข้อมูลไม่ถูกต้อง (รูปแบบไม่ตรงกับระบบ)", "เกิดข้อผิดพลาด");
+                        }
+                    } catch(err) {
+                        showAlert("เกิดข้อผิดพลาดในการอ่านไฟล์ JSON", "เกิดข้อผิดพลาด");
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            const triggerManualRestore = () => {
+                let backups = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    try {
+                        const raw = localStorage.getItem(key);
+                        if (raw && raw.includes('masterData')) {
+                            const p = JSON.parse(raw);
+                            if (p && p.masterData && p.masterData.length > 0) {
+                                backups.push({ key, size: raw.length, items: p.masterData.length, raw });
+                            }
+                        }
+                    } catch(e) {}
+                }
+                setRecoveryOptions(backups.sort((a,b) => b.size - a.size));
+                setShowRecoveryModal(true);
+            };
+
+            const resetData = () => { 
+                showConfirm("ยืนยันที่จะลบข้อมูลทั้งหมดและเริ่มใหม่ใช่หรือไม่? ข้อมูลจะไม่สามารถกู้คืนได้เว้นแต่คุณจะมีไฟล์ Backup", () => {
+                    localStorage.removeItem(STORAGE_KEY); 
+                    window.location.reload(); 
+                }); 
+            };
+
+            const handleExportSummary = () => {
+                const activeItems = sortMasterData(masterData.filter(m => isItemActive(m) && (summaryCat === 'ALL' || m.category === summaryCat)));
+                const exportData = activeItems.map(m => {
+                    const r = sumArrayQty(m.received);
+                    const d = sumArrayQty(m.disbursed);
+
+                    return {
+                        "Item Code": m.code,
+                        "Item Name": m.name,
+                        "Brand": m.brand || '-',
+                        "Spec": m.spec,
+                        "Unit": m.unit,
+                        "Category": m.category,
+                        "Total Received (In)": r,
+                        "Total Disbursed (Out)": d,
+                        "Balance (คงเหลือ)": r - d
+                    };
+                });
+                exportToExcel(exportData, "StockSummary_Export", "Summary");
+            };
+
+            const handleExportRequestHistory = () => {
+                let exportData = [];
+                requests.forEach(req => {
+                    req.items.forEach(it => {
+                        exportData.push({
+                            "Request No.": req.sheetNo,
+                            "Date": formatDate(req.date),
+                            "Status": req.status,
+                            "Company": req.company || '-',
+                            "Requestor": req.from,
+                            "Checker": req.checker || '-',
+                            "Approver": req.approver || '-',
+                            "Dispenser": req.dispenser || '-',
+                            "Work/Location": req.work || '-',
+                            "Material Code": it.code,
+                            "Material Name": it.name,
+                            "Spec": it.spec,
+                            "Unit": it.unit,
+                            "Quantity": it.qty
+                        });
+                    });
+                });
+                exportToExcel(exportData, "RequestHistory_Export", "Requests");
+            };
+
+            const deleteRequestRecord = (req) => {
+                showConfirm(`ต้องการลบใบเบิก ${req.sheetNo} ใช่หรือไม่?\n**ยอดที่เบิกไปจะถูกคืนกลับเข้าสต็อก**`, () => {
+                    let newMaster = [...masterData];
+                    req.items.forEach(oldItem => {
+                        const mIdx = newMaster.findIndex(m => m.code === oldItem.code);
+                        if (mIdx > -1 && newMaster[mIdx].disbursed) {
+                            const dIdx = newMaster[mIdx].disbursed.findIndex(d => d.reqNo === req.id);
+                            if (dIdx > -1) newMaster[mIdx].disbursed.splice(dIdx, 1);
+                        }
+                    });
+                    setMasterData(newMaster);
+                    setRequests(prev => prev.filter(r => r.id !== req.id));
+                    showAlert("ลบข้อมูลประวัติการเบิกสำเร็จ", "สำเร็จ");
+                });
+            };
+
+            if (!isLoaded) {
+                return (
+                    <div className="flex min-h-screen items-center justify-center bg-slate-50 flex-col">
+                        <div className="text-4xl mb-4 animate-bounce">📦</div>
+                        <h2 className="text-xl font-bold text-slate-700">กำลังกู้คืนและโหลดข้อมูล...</h2>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex min-h-screen bg-slate-100 font-sans text-slate-900">
+                    {/* UI DIALOGS */}
+                    {alertMsg && (
+                        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-in fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all">
+                                <div className="p-4 bg-blue-600 text-white font-bold flex gap-2 items-center"><Icons.FileText size={18}/> {alertMsg.title}</div>
+                                <div className="p-6 text-slate-700 font-medium text-center">{alertMsg.message}</div>
+                                <div className="p-4 border-t bg-slate-50 flex justify-end">
+                                    <button onClick={() => { if(alertMsg.onOk) alertMsg.onOk(); setAlertMsg(null); }} className="px-8 py-2.5 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 shadow-md transition-transform active:scale-95">ตกลง</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    {confirmMsg && (
+                        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-in fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all">
+                                <div className="p-4 bg-red-600 text-white font-bold flex gap-2 items-center"><Icons.Target size={18}/> {confirmMsg.title}</div>
+                                <div className="p-6 text-slate-700 font-medium whitespace-pre-line text-center leading-relaxed">{confirmMsg.message}</div>
+                                <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
+                                    <button onClick={() => setConfirmMsg(null)} className="px-6 py-2 text-slate-600 hover:bg-slate-200 rounded-lg font-bold transition-colors">ยกเลิก</button>
+                                    <button onClick={() => { confirmMsg.onConfirm(); setConfirmMsg(null); }} className="px-6 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md transition-transform active:scale-95">ยืนยัน</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* RECOVERY MODAL */}
+                    {showRecoveryModal && (
+                        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 animate-in fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all">
+                                <div className="p-4 bg-emerald-600 text-white font-bold flex justify-between items-center">
+                                    <div className="flex gap-2 items-center"><Icons.RefreshCw size={18}/> ค้นหาและกู้คืนข้อมูลเดิม</div>
+                                    <button onClick={()=>setShowRecoveryModal(false)} className="hover:bg-white/20 p-1 rounded-lg"><Icons.X size={18}/></button>
+                                </div>
+                                <div className="p-6 max-h-96 overflow-y-auto bg-slate-50">
+                                    {recoveryOptions.length === 0 ? (
+                                        <div className="text-center text-slate-500 py-8 border-2 border-dashed border-slate-300 rounded-xl bg-white">
+                                            <Icons.Search size={32} className="mx-auto mb-2 text-slate-300"/>
+                                            <p className="font-bold">ไม่พบประวัติข้อมูลเก่าในเบราว์เซอร์นี้</p>
+                                            <p className="text-xs mt-2">หากมีการเปลี่ยน Browser ล้างแคช หรือใช้โหมดไม่ระบุตัวตน ข้อมูลอาจถูกลบไปแล้ว แนะนำให้ใช้การ "โหลดไฟล์ Backup (.json)" แทนครับ</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-sm text-slate-600 font-bold mb-4">✅ พบข้อมูลที่อาจเป็นของคุณ! กรุณาเลือกเวอร์ชันที่ต้องการกู้คืน:</p>
+                                            {recoveryOptions.map((opt, idx) => (
+                                                <div key={idx} className="border-2 border-emerald-200 bg-white p-4 rounded-xl flex justify-between items-center hover:border-emerald-400 transition-colors shadow-sm">
+                                                    <div>
+                                                        <div className="font-black text-emerald-800 text-lg">มีพัสดุ {opt.items} รายการ</div>
+                                                        <div className="text-xs text-slate-500 font-mono mt-1">ขนาดไฟล์: {(opt.size/1024).toFixed(2)} KB</div>
+                                                    </div>
+                                                    <button onClick={()=>{
+                                                        localStorage.setItem(STORAGE_KEY, opt.raw);
+                                                        window.location.reload();
+                                                    }} className="bg-emerald-600 text-white px-5 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 active:scale-95 transition-transform flex gap-2 items-center"><Icons.Upload size={16}/> กู้คืน</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Sidebar */}
+                    <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 text-white transition-transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static flex flex-col shadow-xl`}>
+                        <div className="h-16 flex items-center px-6 border-b border-slate-800"><h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">Material Control SDE</h1></div>
+                        <nav className="flex-1 p-4 space-y-1 overflow-y-auto custom-scrollbar">
+                            <button onClick={() => setActiveView('SUMMARY')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'SUMMARY' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.LayoutDashboard size={18} /> Dashboard Summary</button>
+                            <button onClick={() => setActiveView('TRACKING')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'TRACKING' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Target size={18} /> Tracking Board</button>
+                            <button onClick={() => setActiveView('STOCK_CARD')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'STOCK_CARD' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Book size={18} /> Stock Card</button>
+                            <button onClick={() => setActiveView('PLAN_MANAGE')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'PLAN_MANAGE' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.ClipboardList size={18} /> Manage Plans</button>
+                            <button onClick={() => setActiveView('RECEIVING')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'RECEIVING' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Truck size={18} /> Receiving History</button>
+                            <button onClick={() => setActiveView('REQUEST')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'REQUEST' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.FileText size={18} /> Request History</button>
+                            <div className="pt-4 pb-2 px-4 text-xs font-bold text-slate-500 uppercase tracking-wider">System Setup</div>
+                            <button onClick={() => setActiveView('REQ_SETUP')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'REQ_SETUP' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Settings size={18} /> Req. Setup</button>
+                            <button onClick={() => setActiveView('MASTER')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'MASTER' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Database size={18} /> Master Data</button>
+                            <button onClick={() => setActiveView('CATEGORY')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'CATEGORY' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Tag size={18} /> Category</button>
+                            <button onClick={() => setActiveView('UNIT')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'UNIT' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Ruler size={18} /> Unit</button>
+                            <button onClick={() => setActiveView('COMPANY')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'COMPANY' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Building size={18} /> Company Setup</button>
+                            <button onClick={() => setActiveView('PERSONNEL')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'PERSONNEL' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Users size={18} /> Personnel</button>
+                            <button onClick={() => setActiveView('VENDOR')} className={`w-full flex gap-3 px-4 py-3 rounded-lg text-sm ${activeView === 'VENDOR' ? 'bg-blue-600' : 'hover:bg-slate-800'}`}><Icons.Store size={18} /> Vendor</button>
+                        </nav>
+                        
+                        {/* Data Backup & Restore Panel */}
+                        <div className="p-4 border-t border-slate-800 text-xs flex flex-col gap-2 bg-slate-950">
+                            <div className="text-slate-400 font-bold mb-1 uppercase tracking-wider text-center">Data Recovery Tool</div>
+                            <button onClick={triggerManualRestore} className="text-emerald-400 hover:bg-emerald-900/30 font-bold border border-emerald-800 rounded py-2 transition-colors flex items-center justify-center gap-2 w-full"><Icons.Search size={14}/> ค้นหาข้อมูลเดิม (Scan)</button>
+                            <label className="text-blue-400 hover:bg-blue-900/30 font-bold border border-blue-800 rounded py-2 transition-colors flex items-center justify-center gap-2 w-full cursor-pointer"><Icons.Upload size={14}/> โหลดไฟล์ Backup <input type="file" hidden accept=".json" onChange={handleImportBackup} /></label>
+                            <button onClick={handleExportBackup} className="text-slate-300 hover:bg-slate-800 font-bold border border-slate-700 rounded py-2 transition-colors flex items-center justify-center gap-2 w-full"><Icons.Download size={14}/> บันทึกเป็นไฟล์ Backup</button>
+                            <button onClick={resetData} className="text-red-400 hover:text-red-300 transition-colors mt-2 text-center w-full underline">Reset All Data</button>
+                        </div>
+                    </aside>
+                    
+                    <main className="flex-1 flex flex-col h-screen overflow-hidden">
+                        <header className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm z-20 shrink-0">
+                            <div className="flex items-center gap-4"><button className="lg:hidden text-slate-600" onClick={() => setSidebarOpen(!sidebarOpen)}><Icons.Menu /></button><h2 className="text-lg font-bold text-slate-800">Project: Material Management</h2></div>
+                            <div className="flex gap-2">
+                                <button onClick={() => { setEditingPlan(null); setIsPlanning(true); }} className="bg-blue-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs font-bold shadow hover:bg-blue-700 flex gap-1 md:gap-2 items-center transition-colors"><Icons.ClipboardList size={16} /> <span className="hidden md:inline">Plan</span></button>
+                                <button onClick={() => { setEditingReceipt(null); setIsReceiving(true); }} className="bg-green-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs font-bold shadow hover:bg-green-700 flex gap-1 md:gap-2 items-center transition-colors"><Icons.Truck size={16} /> <span className="hidden md:inline">Receipt</span></button>
+                                <button onClick={() => { setEditingRequest(null); setIsCreatingReq(true); }} className="bg-orange-600 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg text-xs font-bold shadow hover:bg-orange-700 flex gap-1 md:gap-2 items-center transition-colors"><Icons.ShoppingCart size={16} /> <span className="hidden md:inline">Request</span></button>
+                            </div>
+                        </header>
+
+                        {/* Critical Alert if Data is Empty */}
+                        {isLoaded && masterData.length === 0 && (
+                            <div className="bg-red-50 border-l-4 border-red-500 p-4 m-6 rounded-r-lg shadow-sm flex items-start gap-4">
+                                <Icons.Target className="text-red-500 shrink-0 mt-0.5" size={24} />
+                                <div>
+                                    <h3 className="text-red-800 font-bold text-lg">ระบบไม่พบข้อมูลพัสดุในเครื่องนี้!</h3>
+                                    <p className="text-red-600 text-sm mt-1">หากข้อมูลเดิมของคุณหายไป อาจเกิดจากเบราว์เซอร์ล้างแคช กรุณาไปที่เมนูด้านซ้ายล่าง กดปุ่ม <b className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">"ค้นหาข้อมูลเดิม (Scan)"</b> หรืออัปโหลดไฟล์ Backup (.json)</p>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex-1 overflow-auto p-4 md:p-6 bg-slate-50/50">
+                            {activeView === 'REQ_SETUP' && <RequestSetupView reqConfig={reqConfig} setReqConfig={setReqConfig} masterData={masterData} setMasterData={setMasterData} requests={requests} setRequests={setRequests} personnel={personnel} companies={companies} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'MASTER' && <MasterDataViewWrapper masterData={masterData} setMasterData={setMasterData} categoryList={categoryList} setCategoryList={setCategoryList} unitList={unitList} setUnitList={setUnitList} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'CATEGORY' && <CategoryView categoryList={categoryList} setCategoryList={setCategoryList} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'UNIT' && <UnitView unitList={unitList} setUnitList={setUnitList} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'VENDOR' && <VendorView vendors={vendors} setVendors={setVendors} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'COMPANY' && <CompanyView companies={companies} setCompanies={setCompanies} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'PERSONNEL' && <PersonnelView personnel={personnel} setPersonnel={setPersonnel} showAlert={showAlert} showConfirm={showConfirm} />}
+                            {activeView === 'PLAN_MANAGE' && <PlanManageView masterData={masterData} setMasterData={setMasterData} plans={plans} setPlans={setPlans} setIsPlanning={setIsPlanning} setEditingPlan={setEditingPlan} showConfirm={showConfirm} />}
+                            {activeView === 'TRACKING' && <TrackingView masterData={masterData} categoryList={categoryList} setActiveView={setActiveView} />}
+                            {activeView === 'STOCK_CARD' && <StockCardView masterData={masterData} categoryList={categoryList} />}
+                            
+                            {activeView === 'SUMMARY' && (() => {
+                                const activeItems = sortMasterData(masterData.filter(m => isItemActive(m) && (summaryCat === 'ALL' || m.category === summaryCat)));
+                                const totalIn = activeItems.reduce((acc, m) => acc + sumArrayQty(m.received), 0);
+                                const totalOut = activeItems.reduce((acc, m) => acc + sumArrayQty(m.disbursed), 0);
+                                
+                                return (
+                                    <div className="space-y-6 animate-in fade-in">
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-4">
+                                            <h2 className="text-xl font-bold text-slate-800">Dashboard Summary</h2>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <select className="border border-slate-300 p-2 rounded-lg text-sm bg-white min-w-[120px] outline-none focus:ring-2 focus:ring-blue-500" value={summaryCat} onChange={e=>setSummaryCat(e.target.value)}>
+                                                    <option value="ALL">All Categories</option>
+                                                    {(categoryList||[]).map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                                                </select>
+                                                <button onClick={handleExportSummary} className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-2 rounded-lg text-xs font-bold shadow-sm hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                                    <Icons.Download size={14}/> Export
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                                            <div className="bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
+                                                <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">รายการพัสดุที่มีความเคลื่อนไหว</div>
+                                                <div className="text-3xl font-black text-blue-700 mt-2">{activeItems.length} <span className="text-sm font-normal text-slate-400">รายการ</span></div>
+                                            </div>
+                                            <div className="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
+                                                <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">ยอดรับเข้ารวมทั้งหมด (Total In)</div>
+                                                <div className="text-3xl font-black text-green-600 mt-2">{totalIn} <span className="text-sm font-normal text-slate-400">หน่วย</span></div>
+                                            </div>
+                                            <div className="bg-white p-6 rounded-xl shadow border-l-4 border-red-500">
+                                                <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">ยอดเบิกจ่ายรวมทั้งหมด (Total Out)</div>
+                                                <div className="text-3xl font-black text-red-600 mt-2">{totalOut} <span className="text-sm font-normal text-slate-400">หน่วย</span></div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-xl shadow overflow-hidden">
+                                            <div className="p-4 border-b bg-slate-50 font-bold text-slate-700 flex gap-2 items-center">
+                                                <Icons.LayoutDashboard size={18}/> รายละเอียดสต็อก (Stock Details)
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-slate-100 border-b">
+                                                    <tr>
+                                                        <th className="p-3 whitespace-nowrap">Item (พัสดุ)</th>
+                                                        <th className="text-right p-3 w-32 whitespace-nowrap">In (รับเข้า)</th>
+                                                        <th className="text-right p-3 w-32 whitespace-nowrap">Out (เบิกจ่าย)</th>
+                                                        <th className="text-right p-3 w-32 whitespace-nowrap">Bal (คงเหลือ)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {activeItems.map(m => {
+                                                        const r = sumArrayQty(m.received); 
+                                                        const d = sumArrayQty(m.disbursed);
+                                                        
+                                                        return (
+                                                            <tr key={m.code} className="border-b hover:bg-slate-50">
+                                                                <td className="p-3 font-bold align-middle min-w-[200px]">
+                                                                    {m.name} 
+                                                                    {m.brand && <span className="text-xs bg-gray-200 px-1 rounded ml-2 font-normal">{m.brand}</span>}
+                                                                    <span className="text-xs text-slate-400 ml-1">({m.spec})</span>
+                                                                    <div className="text-[10px] text-gray-400 font-mono mt-0.5">{m.code}</div>
+                                                                </td>
+                                                                <td className="text-right text-green-600 font-bold p-3 align-middle text-base border-l border-slate-100">{r}</td>
+                                                                <td className="text-right text-red-600 font-bold p-3 align-middle text-base border-l border-slate-100">{d}</td>
+                                                                <td className="text-right font-black p-3 align-middle border-l border-slate-100 bg-slate-50/30">
+                                                                    <span className={r-d < 0 ? 'text-red-500 text-base' : 'text-slate-800 text-base'}>{r-d}</span> 
+                                                                    <span className="text-xs font-normal text-slate-500 ml-1 block sm:inline">{m.unit}</span>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    {activeItems.length === 0 && <tr><td colSpan="4" className="text-center p-8 text-slate-400">ไม่มีข้อมูล (No Active Items)</td></tr>}
+                                                </tbody>
+                                                <tfoot className="bg-slate-100 font-black border-t-2 border-slate-300">
+                                                    <tr>
+                                                        <td className="p-3 text-right uppercase text-slate-600">รวมทั้งหมด (Grand Total):</td>
+                                                        <td className="p-3 text-right text-green-700 text-lg">{totalIn}</td>
+                                                        <td className="p-3 text-right text-red-700 text-lg">{totalOut}</td>
+                                                        <td className="p-3 text-right text-blue-700 text-lg">{totalIn - totalOut}</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                            
+                            {activeView === 'REQUEST' && (
+                                <div className="bg-white p-6 rounded-xl shadow border-t-4 border-orange-500 animate-in fade-in">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold flex items-center gap-2 text-orange-700"><Icons.FileText size={20}/> Request History</h3>
+                                        <div className="flex gap-2">
+                                            <button onClick={handleExportRequestHistory} className="bg-orange-50 text-orange-700 border border-orange-200 px-4 py-2 rounded text-xs font-bold shadow-sm hover:bg-orange-100 transition-colors flex items-center gap-1"><Icons.Download size={14}/> Export</button>
+                                            <button onClick={() => { setEditingRequest(null); setIsCreatingReq(true); }} className="bg-orange-600 text-white px-4 py-2 rounded text-xs font-bold shadow hover:bg-orange-700 transition-colors">+ New Request</button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                                        {(requests||[]).map((req, idx) => (
+                                            <div key={req.id} className="bg-white p-5 rounded-xl border border-slate-200 hover:border-orange-400 hover:shadow-md transition-all group relative">
+                                                <div className="absolute top-4 right-4 flex gap-2">
+                                                    <button onClick={() => setViewingRequestIdx(idx)} className="text-slate-300 hover:text-orange-500 transition-colors"><Icons.Eye size={20}/></button>
+                                                    <button onClick={() => { setEditingRequest(req); setIsCreatingReq(true); }} className="text-slate-300 hover:text-blue-500 transition-colors"><Icons.Edit3 size={18}/></button>
+                                                    <button onClick={() => deleteRequestRecord(req)} className="text-slate-300 hover:text-red-500 transition-colors"><Icons.Trash2 size={18}/></button>
+                                                </div>
+                                                <div className="flex justify-between items-start mb-3 pr-20">
+                                                    <span className="bg-orange-100 text-orange-700 text-xs px-2 py-1 rounded font-bold group-hover:bg-orange-600 group-hover:text-white transition-colors">{req.sheetNo}</span>
+                                                </div>
+                                                <div className="text-xs text-slate-400 font-medium mb-3 flex items-center gap-1"><Icons.Calendar size={12}/> {formatDate(req.date)}</div>
+                                                
+                                                <p className="text-sm text-slate-600 mb-1"><span className="font-bold text-slate-400 text-xs uppercase mr-1">Company</span> <span className="font-semibold text-blue-700">{req.company || '-'}</span></p>
+                                                <p className="text-sm text-slate-600 mb-1"><span className="font-bold text-slate-400 text-xs uppercase mr-1">Req. By</span> <span className="font-semibold text-slate-700">{req.from}</span></p>
+                                                <p className="text-sm text-slate-600 mb-4 truncate"><span className="font-bold text-slate-400 text-xs uppercase mr-1">Work</span> {req.work || '-'}</p>
+                                                
+                                                <div className="border-t pt-3 text-sm text-slate-600 font-bold flex justify-between items-center">
+                                                    <span className="text-xs text-slate-400">รายการเบิก:</span>
+                                                    <span className="bg-slate-100 px-2 py-1 rounded text-slate-800">{req.items?.length || 0} items</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(!requests || requests.length === 0) && <div className="col-span-full text-center p-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed">ยังไม่มีประวัติการเบิก (No Request History)</div>}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeView === 'RECEIVING' && <ReceivingView vendors={vendors} masterData={masterData} setMasterData={setMasterData} receipts={receipts} setReceipts={setReceipts} categoryList={categoryList} setIsReceiving={setIsReceiving} setEditingReceipt={setEditingReceipt} plans={plans} showConfirm={showConfirm} showAlert={showAlert} />}
+                        </div>
+                    </main>
+
+                    {/* MODALS */}
+                    {isReceiving && <ReceivingModal 
+                        isReceiving={isReceiving} setIsReceiving={setIsReceiving}
+                        editingReceipt={editingReceipt} setEditingReceipt={setEditingReceipt}
+                        vendors={vendors}
+                        masterData={masterData} setMasterData={setMasterData}
+                        receipts={receipts} setReceipts={setReceipts}
+                        categoryList={categoryList}
+                        plans={plans}
+                        showAlert={showAlert}
+                    />}
+                    {isCreatingReq && <RequestModal 
+                        isCreatingReq={isCreatingReq} setIsCreatingReq={setIsCreatingReq}
+                        editingRequest={editingRequest} setEditingRequest={setEditingRequest}
+                        reqConfig={reqConfig} setReqConfig={setReqConfig}
+                        masterData={masterData} setMasterData={setMasterData}
+                        personnel={personnel}
+                        companies={companies}
+                        requests={requests} setRequests={setRequests}
+                        showAlert={showAlert}
+                    />}
+                    {viewingRequestIdx !== null && <RequestDetailModal 
+                        requests={requests} 
+                        viewingIdx={viewingRequestIdx} 
+                        setViewingIdx={setViewingRequestIdx} 
+                    />}
+                    {isPlanning && <PlanningModal 
+                        isPlanning={isPlanning} setIsPlanning={setIsPlanning}
+                        editingPlan={editingPlan} setEditingPlan={setEditingPlan}
+                        masterData={masterData} setMasterData={setMasterData}
+                        plans={plans} setPlans={setPlans}
+                        showAlert={showAlert}
+                    />}
+                </div>
+            );
+        };
+
+        const container = document.getElementById('root');
+        const root = createRoot(container);
+        root.render(<ErrorBoundary><App /></ErrorBoundary>);
+    </script>
+</body>
+</html>

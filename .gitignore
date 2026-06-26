@@ -1,0 +1,26 @@
+# Temporary and Backup Files
+*.bak_*
+*.bak
+Backup/
+New project 3/**/*.bak*
+New project 3/**/*.pyc
+New project 3/**/__pycache__/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local Data and SQLite Databases
+*.sqlite3
+*.disabled_old_*
+*.ndjson
+*.xlsx
+
+# Exceptions: Keep template files in Template/ directory
+!Template/**/*.xlsx
+!Template/**/*.csv
+
+# OS system files
+.DS_Store
+Thumbs.db
+desktop.ini
