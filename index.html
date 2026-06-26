@@ -3148,7 +3148,7 @@
                 setGithubStatus('Syncing');
                 setGithubStatusText('กำลังดึงข้อมูลล่าสุดจาก GitHub...');
                 try {
-                    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+                    const headers = { 'Accept': 'application/vnd.github.v3.raw' };
                     if (githubConfig.token) {
                         headers['Authorization'] = `token ${githubConfig.token}`;
                     }
@@ -3156,9 +3156,7 @@
                     if (!res.ok) {
                         throw new Error(`ไม่พบไฟล์หรือสิทธิ์การเข้าถึงไม่ถูกต้อง (HTTP ${res.status})`);
                     }
-                    const jsonRes = await res.json();
-                    const decoded = decodeURIComponent(escape(atob(jsonRes.content.replace(/\s/g, ''))));
-                    const parsed = JSON.parse(decoded);
+                    const parsed = await res.json();
                     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.masterData)) {
                         throw new Error("ไฟล์ข้อมูลกลางจาก GitHub ไม่ถูกต้อง");
                     }
