@@ -5,7 +5,7 @@ from pathlib import Path
 
 import openpyxl
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(r"C:\Users\bom\Documents\New project 3")
 INPUT_XLSX = BASE_DIR / "outputs" / "db_split" / "ฐานข้อมูล_แยกตามหมวด.xlsx"
 OUTPUT_DB = BASE_DIR / "outputs" / "db_split" / "materials_hierarchy.sqlite3"
 SKIP_SHEETS = {"สรุป", "ตรวจสอบ"}
@@ -127,25 +127,7 @@ def read_grouped_rows():
 
 
 def rebuild_database(grouped):
-    preserved_rows = []
     if OUTPUT_DB.exists():
-        old_conn = sqlite3.connect(OUTPUT_DB)
-        old_conn.row_factory = sqlite3.Row
-        try:
-            preserved_rows = [
-                dict(row)
-                for row in old_conn.execute(
-                    """
-                    SELECT category_code, source_no, material_code, material_name, spec_size, brand, unit
-                    FROM materials
-                    WHERE source_no IS NULL
-                    """
-                )
-            ]
-        except sqlite3.Error:
-            preserved_rows = []
-        finally:
-            old_conn.close()
         OUTPUT_DB.unlink()
 
     conn = sqlite3.connect(OUTPUT_DB)
@@ -252,12 +234,6 @@ def rebuild_database(grouped):
             )
             rows_to_insert.extend(grouped[category])
 
-        source_codes = {row["material_code"] for row in rows_to_insert}
-        preserved_rows = [
-            row
-            for row in preserved_rows
-            if row["material_code"] not in source_codes and row["category_code"] in grouped
-        ]
         conn.executemany(
             """
             INSERT INTO materials (
@@ -268,34 +244,12 @@ def rebuild_database(grouped):
             """,
             rows_to_insert,
         )
-        if preserved_rows:
-            conn.executemany(
-                """
-                INSERT INTO materials (
-                    category_code, source_no, material_code, material_name, spec_size, brand, unit
-                ) VALUES (
-                    :category_code, :source_no, :material_code, :material_name, :spec_size, :brand, :unit
-                )
-                """,
-                preserved_rows,
-            )
-            conn.execute(
-                """
-                UPDATE material_sub_groups
-                SET item_count = (
-                    SELECT COUNT(*)
-                    FROM materials
-                    WHERE materials.category_code = material_sub_groups.category_code
-                )
-                """
-            )
         conn.executemany(
             "INSERT INTO import_metadata(key, value) VALUES (?, ?)",
             [
                 ("source_file", str(INPUT_XLSX)),
                 ("created_at", dt.datetime.now().isoformat(timespec="seconds")),
-                ("material_rows", str(len(rows_to_insert) + len(preserved_rows))),
-                ("preserved_app_rows", str(len(preserved_rows))),
+                ("material_rows", str(len(rows_to_insert))),
                 ("sub_group_rows", str(len(grouped))),
                 ("group_rows", str(len(group_id_cache))),
             ],

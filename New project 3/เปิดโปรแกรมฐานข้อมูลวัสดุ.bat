@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-start "" pyw -3.14 "%~dp0material_catalog_app.py"
+start "" "C:\Users\bom\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe" "%~dp0material_catalog_app.py"

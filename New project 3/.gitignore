@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+
+.env
+.env.*
+
+*.log
+*.tmp
+
+outputs/**/*.inspect.ndjson
+outputs/**/formula_errors.ndjson
