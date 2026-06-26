@@ -2972,9 +2972,22 @@
 
             const [showRecoveryModal, setShowRecoveryModal] = useState(false);
             const [recoveryOptions, setRecoveryOptions] = useState([]);
-            const [centralFileHandle, setCentralFileHandle] = useState(null);
-            const [centralFileName, setCentralFileName] = useState('');
-            const [centralFileStatus, setCentralFileStatus] = useState('');
+            const [githubConfig, setGithubConfig] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('github_sync_config');
+                    if (saved) return JSON.parse(saved);
+                } catch (e) {}
+                return {
+                    owner: '555222bom-ux',
+                    repo: 'material-control-sde',
+                    branch: 'main',
+                    path: 'MaterialControlData_from_New_project_3.json',
+                    token: ''
+                };
+            });
+            const [githubStatus, setGithubStatus] = useState('Offline');
+            const [githubStatusText, setGithubStatusText] = useState('ยังไม่ได้เชื่อมต่อกับ GitHub');
+            const [showGithubSettings, setShowGithubSettings] = useState(false);
             const centralFileInputRef = useRef(null);
 
             useEffect(() => {
@@ -3122,143 +3135,105 @@
                 return normalized;
             };
 
-            const loadCentralDataFile = async (file, handle = null) => {
+            const saveGithubConfig = () => {
+                localStorage.setItem('github_sync_config', JSON.stringify(githubConfig));
+                setShowGithubSettings(false);
+                showAlert("บันทึกการตั้งค่า GitHub Sync เรียบร้อย", "สำเร็จ");
+            };
+
+            const handleLoadFromGitHub = async () => {
+                if (!githubConfig.owner || !githubConfig.repo || !githubConfig.path) {
+                    return showAlert("กรุณากรอกข้อมูล GitHub Configuration ในหน้าตั้งค่าให้ครบถ้วน", "ตั้งค่าไม่ครบ");
+                }
+                setGithubStatus('Syncing');
+                setGithubStatusText('กำลังดึงข้อมูลล่าสุดจาก GitHub...');
                 try {
-                    const parsed = JSON.parse(await file.text());
+                    const headers = { 'Accept': 'application/vnd.github.v3+json' };
+                    if (githubConfig.token) {
+                        headers['Authorization'] = `token ${githubConfig.token}`;
+                    }
+                    const res = await fetch(`https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${githubConfig.path}?ref=${githubConfig.branch}`, { headers });
+                    if (!res.ok) {
+                        throw new Error(`ไม่พบไฟล์หรือสิทธิ์การเข้าถึงไม่ถูกต้อง (HTTP ${res.status})`);
+                    }
+                    const jsonRes = await res.json();
+                    const decoded = decodeURIComponent(escape(atob(jsonRes.content.replace(/\s/g, ''))));
+                    const parsed = JSON.parse(decoded);
                     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.masterData)) {
-                        return showAlert("ไฟล์ข้อมูลกลางไม่ถูกต้อง กรุณาเลือกไฟล์ MaterialControlData.json หรือไฟล์ Backup ของระบบ", "โหลดไฟล์ไม่สำเร็จ");
+                        throw new Error("ไฟล์ข้อมูลกลางจาก GitHub ไม่ถูกต้อง");
                     }
                     const normalized = await applyDataToState(parsed);
-                    setCentralFileHandle(handle);
-                    setCentralFileName(file.name || CENTRAL_DATA_FILE_NAME);
-                    setCentralFileStatus(`เปิดไฟล์กลางแล้ว: ${file.name || CENTRAL_DATA_FILE_NAME}`);
-                    showAlert(`โหลดไฟล์ข้อมูลกลางสำเร็จ\nพบพัสดุ ${normalized.masterData.length} รายการ`, "สำเร็จ");
+                    setGithubStatus('Connected');
+                    setGithubStatusText(`ดึงข้อมูลสำเร็จเมื่อ ${new Date().toLocaleTimeString('th-TH')}`);
+                    showAlert(`ดึงข้อมูลจาก GitHub สำเร็จ\nพบพัสดุ ${normalized.masterData.length} รายการ`, "สำเร็จ");
                 } catch (err) {
-                    console.error('Central data load error:', err);
-                    showAlert("อ่านไฟล์ข้อมูลกลางไม่สำเร็จ กรุณาตรวจสอบว่าเป็นไฟล์ JSON ของระบบ", "เกิดข้อผิดพลาด");
-                } finally {
-                    if (centralFileInputRef.current) centralFileInputRef.current.value = '';
+                    console.error('GitHub load error:', err);
+                    setGithubStatus('Error');
+                    setGithubStatusText(`ข้อผิดพลาด: ${err.message}`);
+                    showAlert(`ดึงข้อมูลไม่สำเร็จ: ${err.message}`, "เกิดข้อผิดพลาด");
                 }
             };
 
-            const handleOpenCentralData = async () => {
-                if (window.showOpenFilePicker) {
-                    try {
-                        const [handle] = await window.showOpenFilePicker({
-                            types: [{ description: 'Material Control Data', accept: { 'application/json': ['.json'] } }],
-                            multiple: false
-                        });
-                        const file = await handle.getFile();
-                        await loadCentralDataFile(file, handle);
-                        return;
-                    } catch (err) {
-                        if (err?.name === 'AbortError') return;
-                        console.error('File picker open error:', err);
-                    }
+            const handlePushToGitHub = async () => {
+                if (!githubConfig.owner || !githubConfig.repo || !githubConfig.path) {
+                    return showAlert("กรุณากรอกข้อมูล GitHub Configuration ในหน้าตั้งค่าให้ครบถ้วน", "ตั้งค่าไม่ครบ");
                 }
-                centralFileInputRef.current?.click();
-            };
-
-            const downloadCentralDataFile = (dataObj, filename = CENTRAL_DATA_FILE_NAME) => {
-                const dataStr = JSON.stringify(dataObj, null, 2);
-                const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
-                const linkElement = document.createElement('a');
-                linkElement.href = URL.createObjectURL(blob);
-                linkElement.download = filename || CENTRAL_DATA_FILE_NAME;
-                linkElement.click();
-                setTimeout(() => URL.revokeObjectURL(linkElement.href), 1000);
-            };
-
-            const writeCentralDataHandle = async (handle, dataObj) => {
-                if (handle.queryPermission && handle.requestPermission) {
-                    const currentPermission = await handle.queryPermission({ mode: 'readwrite' });
-                    if (currentPermission !== 'granted') {
-                        const nextPermission = await handle.requestPermission({ mode: 'readwrite' });
-                        if (nextPermission !== 'granted') throw new Error('ไม่ได้รับสิทธิ์เขียนไฟล์');
-                    }
+                if (!githubConfig.token) {
+                    return showAlert("กรุณาระบุ Personal Access Token เพื่อส่งข้อมูลขึ้น GitHub", "ต้องการ Token");
                 }
-                const writable = await handle.createWritable();
-                await writable.write(JSON.stringify(dataObj, null, 2));
-                await writable.close();
-            };
-
-            useEffect(() => {
-                if (!isLoaded || !centralFileHandle?.createWritable) return;
-                let cancelled = false;
-                const timer = setTimeout(async () => {
-                    try {
-                        const dataObj = getCurrentData();
-                        await writeCentralDataHandle(centralFileHandle, dataObj);
-                        if (!cancelled) {
-                            const stamp = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-                            setCentralFileStatus(`บันทึกอัตโนมัติแล้ว ${stamp}: ${centralFileName || CENTRAL_DATA_FILE_NAME}`);
-                        }
-                    } catch (err) {
-                        if (!cancelled) {
-                            console.error('Central data auto-save error:', err);
-                            setCentralFileStatus("บันทึกอัตโนมัติไม่สำเร็จ กรุณากดบันทึกไฟล์กลาง");
-                        }
-                    }
-                }, 2000);
-                return () => {
-                    cancelled = true;
-                    clearTimeout(timer);
-                };
-            }, [masterData, categoryList, unitList, personnel, requests, receipts, plans, reqConfig, vendors, companies, isLoaded, centralFileHandle, centralFileName]);
-
-            const handleSaveCentralData = async () => {
-                const dataObj = getCurrentData();
+                setGithubStatus('Syncing');
+                setGithubStatusText('กำลังส่งข้อมูลขึ้น GitHub...');
                 try {
-                    if (centralFileHandle?.createWritable) {
-                        await writeCentralDataHandle(centralFileHandle, dataObj);
-                        setCentralFileStatus(`บันทึกไฟล์กลางแล้ว: ${centralFileName || CENTRAL_DATA_FILE_NAME}`);
-                        showAlert("บันทึกกลับไฟล์ข้อมูลกลางสำเร็จ รอ OneDrive sync ให้เสร็จก่อนเปิดจากเครื่องอื่น", "สำเร็จ");
-                        return;
-                    }
-                    if (window.showSaveFilePicker) {
-                        const handle = await window.showSaveFilePicker({
-                            suggestedName: centralFileName || CENTRAL_DATA_FILE_NAME,
-                            types: [{ description: 'Material Control Data', accept: { 'application/json': ['.json'] } }]
-                        });
-                        await writeCentralDataHandle(handle, dataObj);
-                        setCentralFileHandle(handle);
-                        setCentralFileName(handle.name || centralFileName || CENTRAL_DATA_FILE_NAME);
-                        setCentralFileStatus(`บันทึกไฟล์กลางแล้ว: ${handle.name || centralFileName || CENTRAL_DATA_FILE_NAME}`);
-                        showAlert("บันทึกไฟล์ข้อมูลกลางสำเร็จ เก็บไฟล์นี้ไว้ใน OneDrive เพื่อเปิดจากเครื่องอื่น", "สำเร็จ");
-                        return;
-                    }
-                    downloadCentralDataFile(dataObj, centralFileName || CENTRAL_DATA_FILE_NAME);
-                    setCentralFileStatus("ดาวน์โหลดไฟล์ข้อมูลกลางแล้ว กรุณานำไฟล์ไปวางทับใน OneDrive");
-                    showAlert("Browser นี้ไม่รองรับการเขียนทับไฟล์โดยตรง ระบบจึงดาวน์โหลดไฟล์ JSON ให้ กรุณานำไปวางทับไฟล์กลางใน OneDrive", "บันทึกแบบดาวน์โหลด");
-                } catch (err) {
-                    if (err?.name === 'AbortError') return;
-                    console.error('Central data save error:', err);
-                    showAlert("บันทึกไฟล์ข้อมูลกลางไม่สำเร็จ กรุณาลอง Save As ใหม่", "เกิดข้อผิดพลาด");
-                }
-            };
+                    const headers = {
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json',
+                        'Authorization': `token ${githubConfig.token}`
+                    };
 
-            const handleSaveCentralDataAs = async () => {
-                const dataObj = getCurrentData();
-                try {
-                    if (window.showSaveFilePicker) {
-                        const handle = await window.showSaveFilePicker({
-                            suggestedName: CENTRAL_DATA_FILE_NAME,
-                            types: [{ description: 'Material Control Data', accept: { 'application/json': ['.json'] } }]
-                        });
-                        await writeCentralDataHandle(handle, dataObj);
-                        setCentralFileHandle(handle);
-                        setCentralFileName(handle.name || CENTRAL_DATA_FILE_NAME);
-                        setCentralFileStatus(`บันทึกไฟล์กลางแล้ว: ${handle.name || CENTRAL_DATA_FILE_NAME}`);
-                        showAlert("บันทึกไฟล์ข้อมูลกลางสำเร็จ เก็บไฟล์นี้ไว้ใน OneDrive เพื่อเปิดจากเครื่องอื่น", "สำเร็จ");
-                        return;
+                    // 1. Fetch current SHA to avoid conflict
+                    let sha = '';
+                    try {
+                        const getRes = await fetch(`https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${githubConfig.path}?ref=${githubConfig.branch}`, { headers });
+                        if (getRes.ok) {
+                            const getJson = await getRes.json();
+                            sha = getJson.sha;
+                        }
+                    } catch (e) {
+                        console.warn('Could not fetch SHA, attempting without SHA', e);
                     }
-                    downloadCentralDataFile(dataObj, CENTRAL_DATA_FILE_NAME);
-                    setCentralFileStatus("ดาวน์โหลดไฟล์ข้อมูลกลางแล้ว กรุณานำไฟล์ไปวางทับใน OneDrive");
-                    showAlert("Browser นี้ไม่รองรับ Save As โดยตรง ระบบจึงดาวน์โหลดไฟล์ JSON ให้", "บันทึกแบบดาวน์โหลด");
+
+                    // 2. Put file content
+                    const dataObj = getCurrentData();
+                    const dataStr = JSON.stringify(dataObj, null, 2);
+                    const base64Content = btoa(unescape(encodeURIComponent(dataStr)));
+                    const body = {
+                        message: `Update Material Control Data via App [${new Date().toLocaleDateString('th-TH')} ${new Date().toLocaleTimeString('th-TH')}]`,
+                        content: base64Content,
+                        branch: githubConfig.branch
+                    };
+                    if (sha) {
+                        body.sha = sha;
+                    }
+
+                    const putRes = await fetch(`https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${githubConfig.path}`, {
+                        method: 'PUT',
+                        headers,
+                        body: JSON.stringify(body)
+                    });
+
+                    if (!putRes.ok) {
+                        const errJson = await putRes.json().catch(() => ({}));
+                        throw new Error(errJson.message || `HTTP ${putRes.status}`);
+                    }
+
+                    setGithubStatus('Connected');
+                    setGithubStatusText(`ส่งข้อมูลสำเร็จเมื่อ ${new Date().toLocaleTimeString('th-TH')}`);
+                    showAlert("บันทึกข้อมูลและอัปโหลดขึ้น GitHub สำเร็จ!", "สำเร็จ");
                 } catch (err) {
-                    if (err?.name === 'AbortError') return;
-                    console.error('Central data save as error:', err);
-                    showAlert("บันทึกไฟล์ข้อมูลกลางไม่สำเร็จ", "เกิดข้อผิดพลาด");
+                    console.error('GitHub push error:', err);
+                    setGithubStatus('Error');
+                    setGithubStatusText(`ข้อผิดพลาด: ${err.message}`);
+                    showAlert(`ส่งข้อมูลไม่สำเร็จ: ${err.message}`, "เกิดข้อผิดพลาด");
                 }
             };
 
@@ -3456,16 +3431,6 @@
 
             return (
                 <div className="flex min-h-screen bg-slate-100 font-sans text-slate-900">
-                    <input
-                        ref={centralFileInputRef}
-                        type="file"
-                        hidden
-                        accept=".json,application/json"
-                        onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) loadCentralDataFile(file, null);
-                        }}
-                    />
                     {alertMsg && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in">
                             <div className="bg-white rounded-2xl border border-slate-200/50 shadow-2xl w-full max-w-md overflow-hidden transform transition-all border border-slate-100">
@@ -3527,6 +3492,59 @@
                                             ))}
                                         </div>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showGithubSettings && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in">
+                            <div className="bg-white rounded-2xl border border-slate-200/50 shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+                                <div className="p-4 bg-slate-900 text-white font-bold flex justify-between items-center">
+                                    <div className="flex gap-2 items-center"><Icons.Settings size={18}/> ตั้งค่า GitHub Sync</div>
+                                    <button onClick={()=>setShowGithubSettings(false)} className="hover:bg-white/20 p-1 rounded-lg"><Icons.X size={18}/></button>
+                                </div>
+                                <div className="p-6 space-y-4 bg-slate-50 text-slate-800 text-xs">
+                                    <div className="space-y-1">
+                                        <label className="block text-slate-600 font-bold">GitHub Owner / Organization</label>
+                                        <input type="text" className="w-full border border-slate-300 rounded-lg p-2 bg-white" 
+                                            value={githubConfig.owner} 
+                                            onChange={e => setGithubConfig({...githubConfig, owner: e.target.value})} 
+                                            placeholder="e.g. 555222bom-ux" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-slate-600 font-bold">Repository Name</label>
+                                        <input type="text" className="w-full border border-slate-300 rounded-lg p-2 bg-white" 
+                                            value={githubConfig.repo} 
+                                            onChange={e => setGithubConfig({...githubConfig, repo: e.target.value})} 
+                                            placeholder="e.g. material-control-sde" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-slate-600 font-bold">Branch</label>
+                                        <input type="text" className="w-full border border-slate-300 rounded-lg p-2 bg-white" 
+                                            value={githubConfig.branch} 
+                                            onChange={e => setGithubConfig({...githubConfig, branch: e.target.value})} 
+                                            placeholder="e.g. main" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-slate-600 font-bold">File Path in Repository</label>
+                                        <input type="text" className="w-full border border-slate-300 rounded-lg p-2 bg-white" 
+                                            value={githubConfig.path} 
+                                            onChange={e => setGithubConfig({...githubConfig, path: e.target.value})} 
+                                            placeholder="e.g. MaterialControlData_from_New_project_3.json" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="block text-slate-600 font-bold">Personal Access Token (classic or fine-grained)</label>
+                                        <input type="password" className="w-full border border-slate-300 rounded-lg p-2 bg-white" 
+                                            value={githubConfig.token} 
+                                            onChange={e => setGithubConfig({...githubConfig, token: e.target.value})} 
+                                            placeholder="ghp_..." />
+                                        <p className="text-[10px] text-slate-500 mt-1">ต้องการ token ที่มีสิทธิ์ write (repo scope) เพื่อผลักดันข้อมูลกลับ</p>
+                                    </div>
+                                    <div className="pt-2 flex gap-2">
+                                        <button onClick={saveGithubConfig} className="flex-1 bg-slate-900 text-white font-bold py-2.5 rounded-lg hover:bg-slate-800 transition-colors">บันทึกการตั้งค่า</button>
+                                        <button onClick={()=>setShowGithubSettings(false)} className="flex-1 bg-slate-200 text-slate-700 font-bold py-2.5 rounded-lg hover:bg-slate-300 transition-colors">ยกเลิก</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -3621,16 +3639,20 @@
                         
                         <div className="p-4 m-3 rounded-2xl bg-slate-900/50 border border-slate-900 text-xs flex flex-col gap-2.5 backdrop-blur-sm">
                             <div className="flex items-center justify-between px-1">
-                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">OneDrive File</span>
+                                <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">GitHub Sync</span>
                                 <div className="flex items-center gap-1.5">
-                                    <span className={`h-2 w-2 rounded-full pulse-dot ${centralFileHandle ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                                    <span className="text-[10px] font-semibold text-slate-500">{centralFileHandle ? 'Synced' : 'Offline'}</span>
+                                    <span className={`h-2 w-2 rounded-full pulse-dot ${
+                                        githubStatus === 'Connected' ? 'bg-emerald-500' :
+                                        githubStatus === 'Syncing' ? 'bg-blue-500' :
+                                        githubStatus === 'Error' ? 'bg-red-500' : 'bg-amber-500'
+                                    }`}></span>
+                                    <span className="text-[10px] font-semibold text-slate-500">{githubStatus}</span>
                                 </div>
                             </div>
-                            <button onClick={handleOpenCentralData} className="text-cyan-300 hover:text-white hover:bg-cyan-950/40 font-bold border border-cyan-950 hover:border-cyan-700/80 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Upload size={14}/> เปิดไฟล์ข้อมูลกลาง</button>
-                            <button onClick={handleSaveCentralData} className="text-amber-300 hover:text-white hover:bg-amber-950/40 font-bold border border-amber-950 hover:border-amber-700/80 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Save size={14}/> บันทึกไฟล์กลาง</button>
-                            <button onClick={handleSaveCentralDataAs} className="text-slate-400 hover:text-white hover:bg-slate-900 font-semibold border border-slate-900 hover:border-slate-800 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Download size={14}/> สร้างไฟล์กลางใหม่</button>
-                            <div className="min-h-[16px] text-[10px] text-slate-500 text-center break-words px-1 bg-slate-950/40 py-1.5 rounded-lg border border-slate-900/60">{centralFileStatus || (centralFileName ? `ไฟล์กลาง: ${centralFileName}` : 'ยังไม่ได้เลือกไฟล์กลาง')}</div>
+                            <button onClick={handleLoadFromGitHub} className="text-cyan-300 hover:text-white hover:bg-cyan-950/40 font-bold border border-cyan-950 hover:border-cyan-700/80 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Upload size={14}/> ดึงข้อมูลจาก GitHub</button>
+                            <button onClick={handlePushToGitHub} className="text-amber-300 hover:text-white hover:bg-amber-950/40 font-bold border border-amber-950 hover:border-amber-700/80 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Save size={14}/> ส่งข้อมูลขึ้น GitHub</button>
+                            <button onClick={() => setShowGithubSettings(true)} className="text-slate-400 hover:text-white hover:bg-slate-900 font-semibold border border-slate-900 hover:border-slate-800 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Settings size={14}/> ตั้งค่า GitHub Sync</button>
+                            <div className="min-h-[16px] text-[10px] text-slate-500 text-center break-words px-1 bg-slate-950/40 py-1.5 rounded-lg border border-slate-900/60">{githubStatusText}</div>
                             <div className="h-px bg-slate-900 my-1"></div>
                             <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] px-1">Backup Tools</span>
                             <button onClick={triggerManualRestore} className="text-emerald-400 hover:text-white hover:bg-emerald-950/40 font-semibold border border-emerald-950 hover:border-emerald-700/80 rounded-xl py-2 transition-all flex items-center justify-center gap-2 w-full"><Icons.Search size={14}/> ค้นหาข้อมูลเดิม (Scan)</button>
@@ -3648,18 +3670,27 @@
                                 </button>
                                 <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-3">
                                     <h2 className="text-base font-bold text-slate-800 tracking-wide font-outfit">Project: Material Management</h2>
-                                    {centralFileName && (
-                                        <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 text-[10px] text-emerald-700 px-2 py-0.5 rounded-full font-bold">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot"></span>
-                                            <span>Active Sync: {centralFileName}</span>
+                                    {githubConfig.repo && (
+                                        <div className={`flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                            githubStatus === 'Connected' ? 'bg-emerald-50 border border-emerald-100 text-emerald-700' :
+                                            githubStatus === 'Syncing' ? 'bg-blue-50 border border-blue-100 text-blue-700' :
+                                            githubStatus === 'Error' ? 'bg-red-50 border border-red-100 text-red-700' :
+                                            'bg-amber-50 border border-amber-100 text-amber-700'
+                                        }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full pulse-dot ${
+                                                githubStatus === 'Connected' ? 'bg-emerald-500' :
+                                                githubStatus === 'Syncing' ? 'bg-blue-500' :
+                                                githubStatus === 'Error' ? 'bg-red-500' : 'bg-amber-500'
+                                            }`}></span>
+                                            <span>GitHub: {githubConfig.owner}/{githubConfig.repo} ({githubStatus})</span>
                                         </div>
                                     )}
                                 </div>
                             </div>
                             <div className="flex gap-2 items-center">
                                 <div className="hidden xl:flex items-center gap-2 mr-2 border-r border-slate-200 pr-3">
-                                    <button onClick={handleOpenCentralData} className="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200/80 px-3 py-2 rounded-xl text-xs font-bold shadow-sm flex gap-2 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.Upload size={14} /> เปิดไฟล์กลาง</button>
-                                    <button onClick={handleSaveCentralData} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 px-3 py-2 rounded-xl text-xs font-bold shadow-sm flex gap-2 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.Save size={14} /> บันทึกไฟล์กลาง</button>
+                                    <button onClick={handleLoadFromGitHub} className="bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200/80 px-3 py-2 rounded-xl text-xs font-bold shadow-sm flex gap-2 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.Upload size={14} /> ดึงข้อมูล</button>
+                                    <button onClick={handlePushToGitHub} className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 px-3 py-2 rounded-xl text-xs font-bold shadow-sm flex gap-2 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.Save size={14} /> ส่งข้อมูล</button>
                                 </div>
                                 <button onClick={() => { setEditingPlan(null); setIsPlanning(true); }} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/15 flex gap-1.5 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.ClipboardList size={15} /> <span>Plan</span></button>
                                 <button onClick={() => { setEditingReceipt(null); setIsReceiving(true); }} className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/15 flex gap-1.5 items-center transition-all hover:scale-[1.02] active:scale-[0.98]"><Icons.Truck size={15} /> <span>Receipt</span></button>
