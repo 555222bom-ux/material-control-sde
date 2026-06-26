@@ -41,16 +41,13 @@ def patch_file(path, mapping):
         };"""
     )
 
-    text = re.sub(
-        r"\n\s*const CATEGORY_CODE_NAME_MAP = \{.*?\};\n\s*const normalizeCategoryName = .*?\n\s*\};",
-        "",
-        text,
-        flags=re.S,
-    )
+    anchor_start = "const cleanString = (str) => str ? str.toString().trim().replace(/\\s+/g, '').toLowerCase() : '';"
+    anchor_end = "const safeLower = (str) => str ? String(str).toLowerCase() : '';"
 
-    anchor = "const cleanString = (str) => str ? str.toString().trim().replace(/\\s+/g, '').toLowerCase() : '';"
-    if helper not in text:
-        text = text.replace(anchor, anchor + "\n        " + helper, 1)
+    idx_start = text.find(anchor_start)
+    idx_end = text.find(anchor_end)
+    if idx_start != -1 and idx_end != -1:
+        text = text[:idx_start + len(anchor_start)] + "\n        " + helper + "\n        " + text[idx_end:]
 
     text = text.replace(
         "category: trimOrEmpty(m.category) || 'General',",

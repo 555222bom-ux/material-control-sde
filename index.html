@@ -289,12 +289,6 @@
             if (CATEGORY_CODE_NAME_MAP[rawName]) return rawName;
             return rawAbbr || rawName.substring(0, 2).toUpperCase() || 'GN';
         };
-        const normalizeCategoryAbbr = (name, abbr) => {
-            const rawName = String(name ?? '').trim();
-            const rawAbbr = String(abbr ?? '').trim();
-            if (CATEGORY_CODE_NAME_MAP[rawName]) return rawName;
-            return rawAbbr || rawName.substring(0, 2).toUpperCase() || 'GN';
-        };
         const safeLower = (str) => str ? String(str).toLowerCase() : '';
         const sumArrayQty = (arr) => arr ? arr.reduce((a, b) => a + Number(b.qty || 0), 0) : 0;
         const isItemActive = (m) => (m.boq > 0 || sumArrayQty(m.ordered) > 0 || sumArrayQty(m.received) > 0 || sumArrayQty(m.disbursed) > 0);
